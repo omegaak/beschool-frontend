@@ -687,11 +687,17 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
           У вас пока нет назначенных групп.<br/>Обратитесь к администратору.
           {debug && (
             <div style={{ marginTop: 16, fontSize: 11, color: "#aaa", textAlign: "left",
-                         background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: 10 }}>
+                         background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: 10,
+                         maxHeight: 300, overflow: "auto", wordBreak: "break-all" }}>
               managerId: {debug.managerId}<br/>
               Найдено фильтром API: {debug.filteredCount}<br/>
               Проверено всего групп: {debug.totalClassesChecked}<br/>
-              Найдено по teacherIds: {debug.byTeacherIdsCount}
+              Найдено по teacherIds: {debug.byTeacherIdsCount}<br/>
+              {debug._rawSample && (
+                <pre style={{ fontSize: 10, whiteSpace: "pre-wrap", marginTop: 8 }}>
+                  {JSON.stringify(debug._rawSample, null, 1)}
+                </pre>
+              )}
             </div>
           )}
         </div>
