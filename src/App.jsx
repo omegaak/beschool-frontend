@@ -47,10 +47,30 @@ const DEMO = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const C = {
-  navy:"#1B2A4A", gold:"#C9A84C", goldLt:"#FFF8E1", green:"#2D7D46",
-  greenLt:"#E6F4EB", red:"#C0392B", redLt:"#FDE8E8", gray:"#6B7280",
-  border:"#E5E7EB", bg:"#F7F8FC", white:"#FFFFFF", sky:"#E8F0FB",
+  navy:"#173816", gold:"#4DB20D", goldLt:"#EAF7E1", green:"#2E7D32",
+  greenLt:"#E6F4E8", red:"#C0392B", redLt:"#FDE8E8", gray:"#6B7280",
+  border:"#E1E8DD", bg:"#F6FAF4", white:"#FFFFFF", sky:"#E3F3DB",
 };
+
+// Логотип BE School — на тёмном фоне показываем версию с белой подложкой,
+// чтобы зелёный логотип не сливался с тёмно-зелёным хедером
+function Logo({ height = 28, onDark = false }) {
+  return (
+    <img
+      src="/logo.png"
+      alt="BE School"
+      style={{
+        height,
+        display: "block",
+        ...(onDark ? {
+          background: "#fff",
+          padding: "4px 8px",
+          borderRadius: 8,
+        } : {}),
+      }}
+    />
+  );
+}
 const scoreColor = s => s >= 80 ? C.green : s >= 65 ? C.gold : C.red;
 const scoreBg    = s => s >= 80 ? C.greenLt : s >= 65 ? C.goldLt : C.redLt;
 const formatDate = d => {
@@ -193,8 +213,8 @@ function PortfolioLoader({ userId, studentName, onBack }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
                     minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: "Georgia,serif", fontSize: 22, color: C.navy, marginBottom: 10 }}>
-            BE<span style={{ color: C.gold }}>School</span>
+          <div style={{ marginBottom: 10, display: "flex", justifyContent: "center" }}>
+            <Logo height={32} />
           </div>
           <div style={{ fontSize: 13, color: C.gray }}>Загружаем данные из МойКласс...</div>
         </div>
@@ -238,8 +258,8 @@ function Portfolio({ data, studentName, onBack }) {
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
           <div>
-            <div style={{ fontFamily: "Georgia,serif", fontSize: 16, color: C.gold, marginBottom: 6 }}>
-              BE<span style={{ color: "#fff" }}>School</span>
+            <div style={{ marginBottom: 6 }}>
+              <Logo height={18} onDark />
             </div>
             <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 3 }}>
               {studentName || d.name || `Ученик #${d.userId}`}
@@ -393,7 +413,7 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
             total: s.totalLessons || 0,
             attendancePct: s.attendance, // null если ещё нет данных по посещаемости
             level: classInfo.level,
-            lastMark: null,
+            lastMark: s.avgMark, // средний балл из реальных оценок (null если оценок ещё нет)
           })));
         }
       })
@@ -408,9 +428,7 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
       {/* Header */}
       <div style={{ background: C.navy, borderRadius: 14, padding: "18px 18px 16px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ fontFamily: "Georgia,serif", fontSize: 18, color: C.gold }}>
-            BE<span style={{ color: "#fff" }}>School</span>
-          </div>
+          <Logo height={18} onDark />
           {onBackToClasses ? (
             <button onClick={onBackToClasses}
               style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
@@ -469,37 +487,31 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
       {/* Students list */}
       {students.map(s => {
         const attend = s.attendancePct; // null если ещё нет посещений
+        const mark   = s.lastMark;      // средний балл, null если оценок ещё нет
         return (
           <div key={s.id} style={{ background: C.white, border: `1px solid ${C.border}`,
                                    borderRadius: 12, padding: 14, marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "space-between",
-                          alignItems: "flex-start", marginBottom: 10 }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, marginBottom: 2 }}>{s.name}</div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <span style={{ background: C.sky, color: C.navy, fontSize: 10, fontWeight: 600,
-                                  padding: "2px 8px", borderRadius: 10 }}>{s.level}</span>
-                  <span style={{ fontSize: 11, color: C.gray }}>{s.visits}/{s.total} уроков</span>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                {s.lastMark ? (
-                  <div style={{ fontSize: 20, fontWeight: 700, color: scoreColor(s.lastMark),
-                                background: scoreBg(s.lastMark), borderRadius: 8, padding: "3px 10px" }}>
-                    {s.lastMark}
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 11, color: C.gray, fontStyle: "italic" }}>нет оценки</div>
-                )}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, marginBottom: 2 }}>{s.name}</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <span style={{ background: C.sky, color: C.navy, fontSize: 10, fontWeight: 600,
+                                padding: "2px 8px", borderRadius: 10 }}>{s.level}</span>
+                <span style={{ fontSize: 11, color: C.gray }}>{s.visits}/{s.total} уроков</span>
               </div>
             </div>
 
-            {/* Mini attendance bar */}
+            {/* Посещаемость и средний балл — рядом, одинаковый стиль шкал */}
             <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 36px",
-                          alignItems: "center", gap: 8, marginBottom: 12 }}>
+                          alignItems: "center", gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 10, color: C.gray }}>Посещ.</span>
               <AnimBar pct={attend ?? 0} color={attend == null ? C.border : attend >= 80 ? C.green : attend >= 60 ? C.gold : C.red} h={6} />
               <span style={{ fontSize: 11, fontWeight: 600, color: C.navy }}>{attend != null ? `${attend}%` : "—"}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 36px",
+                          alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ fontSize: 10, color: C.gray }}>Ср. балл</span>
+              <AnimBar pct={mark ?? 0} color={mark == null ? C.border : scoreColor(mark)} h={6} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.navy }}>{mark != null ? mark : "—"}</span>
             </div>
 
             {/* Actions */}
@@ -573,13 +585,10 @@ function LoginScreen({ onLogin, onBackToRole }) {
                   minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
       <div style={{ textAlign: "center", padding: 24, maxWidth: 340, width: "100%" }}>
 
-        <div style={{ background: C.navy, width: 68, height: 68, borderRadius: 20,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 30, margin: "0 auto 18px" }}>🔐</div>
-
-        <div style={{ fontFamily: "Georgia,serif", fontSize: 24, color: C.navy, marginBottom: 6 }}>
-          BE<span style={{ color: C.gold }}>School</span>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Logo height={48} />
         </div>
+
         <div style={{ fontSize: 13, color: C.gray, marginBottom: 26 }}>
           Вход для учителей
         </div>
@@ -674,9 +683,7 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
 
       <div style={{ background: C.navy, borderRadius: 14, padding: "18px 18px 16px", marginBottom: 18 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ fontFamily: "Georgia,serif", fontSize: 16, color: C.gold }}>
-            BE<span style={{ color: "#fff" }}>School</span>
-          </div>
+          <Logo height={16} onDark />
           <button onClick={onLogout}
             style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
                      fontSize: 11, fontWeight: 600, padding: "5px 11px", borderRadius: 16,
@@ -749,7 +756,101 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
 }
 
 // ─── ADMIN PANEL (управление учителями) ──────────────────────────────────────
+// ─── ADMIN LOGIN GATE (доступ только у владельца) ───────────────────────────
+function AdminGate({ onBack, children }) {
+  const [token, setToken] = useState(() => localStorage.getItem("be_admin_token") || "");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [checking, setChecking] = useState(true);
+
+  // Проверяем сохранённый токен на валидность при загрузке
+  useEffect(() => {
+    if (!token) { setChecking(false); return; }
+    fetch(`${API_URL}/admin/teachers`, { headers: { "x-admin-token": token } })
+      .then(r => { setVerified(r.ok); setChecking(false); })
+      .catch(() => setChecking(false));
+  }, []);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        localStorage.setItem("be_admin_token", json.token);
+        setToken(json.token);
+        setVerified(true);
+      } else {
+        setError(json.error || "Неверный пароль");
+      }
+    } catch {
+      setError("Сервер недоступен");
+    }
+    setLoading(false);
+  }
+
+  if (checking) return null;
+
+  if (!verified) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                  minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
+      <div style={{ textAlign: "center", padding: 24, maxWidth: 320, width: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 22 }}>
+          <Logo height={40} />
+        </div>
+        <div style={{ fontSize: 13, color: C.gray, marginBottom: 20 }}>Доступ администратора</div>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Пароль администратора"
+            autoFocus
+            style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                     borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                     outline: "none", boxSizing: "border-box", marginBottom: 12 }}
+          />
+          {error && (
+            <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                          padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>{error}</div>
+          )}
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: loading ? C.border : C.navy,
+                     color: loading ? C.gray : "#fff", border: "none", borderRadius: 12,
+                     padding: 13, fontSize: 14, fontWeight: 600, cursor: loading ? "default" : "pointer" }}>
+            {loading ? "Проверяем..." : "Войти"}
+          </button>
+        </form>
+        <button onClick={onBack}
+          style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                   marginTop: 16, cursor: "pointer", textDecoration: "underline" }}>
+          ← Назад
+        </button>
+      </div>
+    </div>
+  );
+
+  return children(token);
+}
+
 function AdminPanel({ onBack }) {
+  return (
+    <AdminGate onBack={onBack}>
+      {(adminToken) => <AdminPanelInner onBack={onBack} adminToken={adminToken} />}
+    </AdminGate>
+  );
+}
+
+function AdminPanelInner({ onBack, adminToken }) {
+  const authHeaders = { "x-admin-token": adminToken };
   const [managers, setManagers] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -760,8 +861,8 @@ function AdminPanel({ onBack }) {
   function loadAll() {
     setLoading(true);
     Promise.all([
-      fetch(`${API_URL}/admin/managers`).then(r => r.json()),
-      fetch(`${API_URL}/admin/teachers`).then(r => r.json()),
+      fetch(`${API_URL}/admin/managers`, { headers: authHeaders }).then(r => r.json()),
+      fetch(`${API_URL}/admin/teachers`, { headers: authHeaders }).then(r => r.json()),
     ]).then(([m, t]) => {
       if (m.ok) setManagers(m.data);
       if (t.ok) setTeachers(t.data);
@@ -791,7 +892,7 @@ function AdminPanel({ onBack }) {
     try {
       const res = await fetch(`${API_URL}/admin/teachers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(form),
       });
       const json = await res.json();
@@ -810,18 +911,32 @@ function AdminPanel({ onBack }) {
 
   async function handleDelete(email) {
     if (!confirm(`Удалить доступ для ${email}?`)) return;
-    await fetch(`${API_URL}/admin/teachers/${encodeURIComponent(email)}`, { method: "DELETE" });
+    await fetch(`${API_URL}/admin/teachers/${encodeURIComponent(email)}`, {
+      method: "DELETE", headers: authHeaders,
+    });
     loadAll();
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("be_admin_token");
+    onBack();
   }
 
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
                   minHeight: "100vh", padding: 16, maxWidth: 520, margin: "0 auto" }}>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-        <button onClick={onBack}
-          style={{ background: "none", border: "none", color: C.gray, fontSize: 20, cursor: "pointer" }}>←</button>
-        <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Управление учителями</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={onBack}
+            style={{ background: "none", border: "none", color: C.gray, fontSize: 20, cursor: "pointer" }}>←</button>
+          <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Управление учителями</div>
+        </div>
+        <button onClick={handleLogout}
+          style={{ background: C.redLt, color: C.red, border: "none", borderRadius: 8,
+                   padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+          Выйти из админки
+        </button>
       </div>
 
       <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
@@ -951,13 +1066,10 @@ export default function App() {
                   minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
       <div style={{ textAlign: "center", padding: 24, maxWidth: 340, width: "100%" }}>
 
-        <div style={{ background: C.navy, width: 68, height: 68, borderRadius: 20,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 30, margin: "0 auto 18px" }}>🎓</div>
-
-        <div style={{ fontFamily: "Georgia,serif", fontSize: 28, color: C.navy, marginBottom: 6 }}>
-          BE<span style={{ color: C.gold }}>School</span>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Logo height={56} />
         </div>
+
         <div style={{ fontSize: 13, color: C.gray, marginBottom: 28, lineHeight: 1.5 }}>
           Система прогресса учеников<br/>
           <span style={{ fontSize: 11 }}>Данные из МойКласс · Каракол</span>
