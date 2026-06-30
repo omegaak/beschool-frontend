@@ -370,9 +370,10 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
         if (json.ok) {
           setStudents(json.data.map(s => ({
             id: s.userId,
-            name: `Ученик #${s.userId}`, // МойКласс /joins не отдаёт имя — подтянется на странице портфолио
+            name: s.name || `Ученик #${s.userId}`,
             visits: s.visits,
-            total: s.visits || 1,
+            total: s.totalLessons || 0,
+            attendancePct: s.attendance, // null если ещё нет данных по посещаемости
             level: classInfo.level,
             lastMark: null,
           })));
@@ -411,7 +412,11 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {[
             [students.length, "Учеников"],
-            [students.length ? Math.round(students.reduce((a,s)=>a+s.visits/s.total*100,0)/students.length)+"%" : "—","Посещ."],
+            [students.length ? (() => {
+              const withData = students.filter(s => s.attendancePct != null);
+              if (!withData.length) return "—";
+              return Math.round(withData.reduce((a,s)=>a+s.attendancePct,0)/withData.length)+"%";
+            })() : "—","Посещ."],
             [students.filter(s=>s.lastMark).length, "С оценками"],
           ].map(([v, l]) => (
             <div key={l} style={{ background: "rgba(255,255,255,.08)", borderRadius: 10,
@@ -445,7 +450,7 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
 
       {/* Students list */}
       {students.map(s => {
-        const attend = Math.round(s.visits / s.total * 100);
+        const attend = s.attendancePct; // null если ещё нет посещений
         return (
           <div key={s.id} style={{ background: C.white, border: `1px solid ${C.border}`,
                                    borderRadius: 12, padding: 14, marginBottom: 10 }}>
@@ -475,8 +480,8 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
             <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 36px",
                           alignItems: "center", gap: 8, marginBottom: 12 }}>
               <span style={{ fontSize: 10, color: C.gray }}>Посещ.</span>
-              <AnimBar pct={attend} color={attend >= 80 ? C.green : attend >= 60 ? C.gold : C.red} h={6} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: C.navy }}>{attend}%</span>
+              <AnimBar pct={attend ?? 0} color={attend == null ? C.border : attend >= 80 ? C.green : attend >= 60 ? C.gold : C.red} h={6} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: C.navy }}>{attend != null ? `${attend}%` : "—"}</span>
             </div>
 
             {/* Actions */}
