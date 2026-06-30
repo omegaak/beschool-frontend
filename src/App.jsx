@@ -82,22 +82,40 @@ function LevelBar({ level, pct }) {
   useEffect(() => { const t = setTimeout(() => setW(pct || 0), 400); return () => clearTimeout(t); }, [pct]);
   const idx = LEVEL_ORDER.indexOf(level);
 
+  // Делим прогресс внутри уровня на 3 деления (3 теста = переход на след. уровень)
+  const segmentFill = (segIndex) => {
+    const segStart = segIndex * (100 / 3);
+    const segEnd   = (segIndex + 1) * (100 / 3);
+    if (w >= segEnd) return 100;
+    if (w <= segStart) return 0;
+    return ((w - segStart) / (segEnd - segStart)) * 100;
+  };
+
   return (
     <div style={{ background: "rgba(255,255,255,.1)", borderRadius: "12px 12px 0 0",
                   padding: "16px 16px 22px", margin: "0 -20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,.6)", fontWeight: 500 }}>
-          До {LEVEL_ORDER[idx + 1] || "Advanced"}
+          До {LEVEL_ORDER[idx + 1] || "Advanced"} · {Math.min(3, Math.ceil(w / (100/3)))}/3 тестов
         </span>
         <span style={{ fontSize: 13, color: C.gold, fontWeight: 700 }}>{pct}%</span>
       </div>
-      <div style={{ background: "rgba(255,255,255,.2)", borderRadius: 6, height: 10, overflow: "hidden" }}>
-        <div style={{
-          height: "100%", borderRadius: 6,
-          background: "linear-gradient(90deg,#C9A84C,#E8C96A)",
-          width: `${w}%`, transition: "width 1.4s cubic-bezier(.4,0,.2,1)",
-        }} />
+
+      {/* 3 деления вместо сплошной шкалы */}
+      <div style={{ display: "flex", gap: 4 }}>
+        {[0, 1, 2].map(seg => (
+          <div key={seg} style={{ flex: 1, background: "rgba(255,255,255,.2)",
+                                  borderRadius: 5, height: 10, overflow: "hidden" }}>
+            <div style={{
+              height: "100%", borderRadius: 5,
+              background: "linear-gradient(90deg,#C9A84C,#E8C96A)",
+              width: `${segmentFill(seg)}%`,
+              transition: "width 1.4s cubic-bezier(.4,0,.2,1)",
+            }} />
+          </div>
+        ))}
       </div>
+
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
         {LEVEL_ORDER.map((l, i) => (
           <span key={l} style={{
