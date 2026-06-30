@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 
+const API_URL = import.meta.env.VITE_API_URL || "https://beschool-production.up.railway.app";
+
 // ─── Real BE School data from МойКласс API analysis ─────────────────────────
 const COURSES = {
   92307: "Beginner", 92312: "ABC", 92313: "Elementary",
@@ -129,6 +131,72 @@ const Notice = ({ icon, text }) => (
     <span>{text}</span>
   </div>
 );
+
+// ─── PORTFOLIO LOADER (fetches real data from backend) ───────────────────────
+function PortfolioLoader({ userId, studentName, onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isDemo, setIsDemo] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    fetch(`${API_URL}/p/${userId}`)
+      .then(res => res.json())
+      .then(json => {
+        if (cancelled) return;
+        if (json.ok) {
+          setData(json.data);
+          setIsDemo(false);
+        } else {
+          // Backend reachable but returned an error (e.g. МойКласс 401) — fall back to demo
+          setData(DEMO);
+          setIsDemo(true);
+          setError(json.error || "Не удалось загрузить данные из МойКласс");
+        }
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // Backend unreachable — fall back to demo so the UI still works
+        setData(DEMO);
+        setIsDemo(true);
+        setError("Сервер недоступен");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                    minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "Georgia,serif", fontSize: 22, color: C.navy, marginBottom: 10 }}>
+            BE<span style={{ color: C.gold }}>School</span>
+          </div>
+          <div style={{ fontSize: 13, color: C.gray }}>Загружаем данные из МойКласс...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {isDemo && (
+        <div style={{ background: "#FDE8E8", borderBottom: "1px solid #C0392B",
+                      padding: "8px 16px", fontSize: 11, color: "#8B1A1A",
+                      textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
+          ⚠️ Демо-данные (МойКласс недоступен: {error})
+        </div>
+      )}
+      <Portfolio data={data} studentName={studentName} onBack={onBack} />
+    </>
+  );
+}
 
 // ─── PORTFOLIO VIEW ───────────────────────────────────────────────────────────
 function Portfolio({ data, studentName, onBack }) {
@@ -441,8 +509,8 @@ export default function App() {
   );
 
   if (screen === "portfolio") return (
-    <Portfolio
-      data={selected?.id === 9602487 ? DEMO : null}
+    <PortfolioLoader
+      userId={selected?.id}
       studentName={selected?.name}
       onBack={() => setScreen("dashboard")}
     />
