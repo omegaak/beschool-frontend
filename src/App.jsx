@@ -630,6 +630,7 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [debug, setDebug] = useState(null);
 
   useEffect(() => {
     fetch(`${API_URL}/teacher/classes`, {
@@ -637,7 +638,7 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
     })
       .then(r => r.json())
       .then(json => {
-        if (json.ok) setClasses(json.data);
+        if (json.ok) { setClasses(json.data); setDebug(json._debug || null); }
         else setError(json.error || "Не удалось загрузить группы");
       })
       .catch(() => setError("Сервер недоступен"))
@@ -684,6 +685,15 @@ function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
       {!loading && !error && classes.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, color: C.gray, fontSize: 13 }}>
           У вас пока нет назначенных групп.<br/>Обратитесь к администратору.
+          {debug && (
+            <div style={{ marginTop: 16, fontSize: 11, color: "#aaa", textAlign: "left",
+                         background: "#fff", border: `1px solid ${C.border}`, borderRadius: 8, padding: 10 }}>
+              managerId: {debug.managerId}<br/>
+              Найдено фильтром API: {debug.filteredCount}<br/>
+              Проверено всего групп: {debug.totalClassesChecked}<br/>
+              Найдено по teacherIds: {debug.byTeacherIdsCount}
+            </div>
+          )}
         </div>
       )}
 
@@ -864,16 +874,27 @@ export default function App() {
   const [session, setSession] = useState(null); // { token, teacher }
   const [activeClass, setActiveClass] = useState(null);
 
-  // Автологин: проверяем сохранённую сессию при загрузке
+  // Автологин: проверяем сохранённую сессию ЧЕРЕЗ backend (не доверяем localStorage вслепую —
+  // backend хранит сессии в памяти и может их терять при передеплое)
   useEffect(() => {
     const token = localStorage.getItem("be_session_token");
-    const teacherRaw = localStorage.getItem("be_teacher");
-    if (token && teacherRaw) {
-      try {
-        const teacher = JSON.parse(teacherRaw);
-        setSession({ token, teacher });
-      } catch {}
-    }
+    if (!token) return;
+
+    fetch(`${API_URL}/auth/me`, { headers: { "x-session-token": token } })
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) {
+          setSession({ token, teacher: json.teacher });
+        } else {
+          // Сессия недействительна — очищаем
+          localStorage.removeItem("be_session_token");
+          localStorage.removeItem("be_teacher");
+        }
+      })
+      .catch(() => {
+        // Backend недоступен — не считаем авторизованным, но не стираем токен
+        // (попробуем снова при следующей загрузке)
+      });
   }, []);
 
   function handleLogin(token, teacher) {
