@@ -346,9 +346,8 @@ function Portfolio({ data, studentName, onBack }) {
 }
 
 // ─── TEACHER DASHBOARD ────────────────────────────────────────────────────────
-function Dashboard({ onView }) {
-  // Реальные ученики из урока 84855335 "Prepositions of place" (29 июня 2026)
-  const students = [
+function Dashboard({ classInfo, onBackToClasses, onView }) {
+  const DEMO_STUDENTS = [
     { id: 9602487,  name: "Айдана Бекова",      visits: 42, total: 48, level: "Pre-Int",      lastMark: 85 },
     { id: 8155276,  name: "Бекзод Эралиев",      visits: 38, total: 48, level: "Pre-Int",      lastMark: 76 },
     { id: 9252964,  name: "Салтанат Омурова",    visits: 45, total: 48, level: "Pre-Int",      lastMark: 92 },
@@ -358,6 +357,30 @@ function Dashboard({ onView }) {
     { id: 10373169, name: "Гулзат Токоева",      visits: 41, total: 48, level: "Pre-Int",      lastMark: 83 },
     { id: 7424296,  name: "Элиза Джумакеева",    visits: 46, total: 48, level: "Pre-Int",      lastMark: 95 },
   ];
+
+  const [students, setStudents] = useState(classInfo ? [] : DEMO_STUDENTS);
+  const [loading, setLoading]   = useState(!!classInfo);
+
+  useEffect(() => {
+    if (!classInfo) return;
+    setLoading(true);
+    fetch(`${API_URL}/class/${classInfo.classId}/students`)
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) {
+          setStudents(json.data.map(s => ({
+            id: s.userId,
+            name: `Ученик #${s.userId}`, // МойКласс /joins не отдаёт имя — подтянется на странице портфолио
+            visits: s.visits,
+            total: s.visits || 1,
+            level: classInfo.level,
+            lastMark: null,
+          })));
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [classInfo]);
 
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
@@ -369,12 +392,26 @@ function Dashboard({ onView }) {
           <div style={{ fontFamily: "Georgia,serif", fontSize: 18, color: C.gold }}>
             BE<span style={{ color: "#fff" }}>School</span>
           </div>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>Панель учителя</span>
+          {onBackToClasses ? (
+            <button onClick={onBackToClasses}
+              style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
+                       fontSize: 11, fontWeight: 600, padding: "5px 11px", borderRadius: 16,
+                       cursor: "pointer" }}>
+              ← Группы
+            </button>
+          ) : (
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>Панель учителя</span>
+          )}
         </div>
+        {classInfo && (
+          <div style={{ fontSize: 16, fontWeight: 600, color: "#fff", marginBottom: 10 }}>
+            {classInfo.name}
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
           {[
             [students.length, "Учеников"],
-            [Math.round(students.reduce((a,s)=>a+s.visits/s.total*100,0)/students.length)+"%","Посещ."],
+            [students.length ? Math.round(students.reduce((a,s)=>a+s.visits/s.total*100,0)/students.length)+"%" : "—","Посещ."],
             [students.filter(s=>s.lastMark).length, "С оценками"],
           ].map(([v, l]) => (
             <div key={l} style={{ background: "rgba(255,255,255,.08)", borderRadius: 10,
@@ -386,17 +423,25 @@ function Dashboard({ onView }) {
         </div>
       </div>
 
+      {loading && (
+        <div style={{ textAlign: "center", padding: 40, color: C.gray, fontSize: 13 }}>
+          Загружаем учеников из МойКласс...
+        </div>
+      )}
+
       {/* Sync notice */}
+      {!loading && (
       <div style={{ background: C.greenLt, border: `1px solid ${C.green}`, borderRadius: 10,
                     padding: "10px 14px", fontSize: 12, color: "#1A5C2A",
                     display: "flex", justifyContent: "space-between", alignItems: "center",
                     marginBottom: 16 }}>
-        <span>🔄 Данные из МойКласс · 29 июн, 09:31</span>
+        <span>🔄 Данные из МойКласс</span>
         <button style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8,
                          padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
           Обновить
         </button>
       </div>
+      )}
 
       {/* Students list */}
       {students.map(s => {
@@ -465,11 +510,392 @@ function Dashboard({ onView }) {
   );
 }
 
+// ─── LOGIN SCREEN ──────────────────────────────────────────────────────────
+function LoginScreen({ onLogin, onBackToRole }) {
+  const [email, setEmail] = useState("");
+  const [pin, setPin]     = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!email || !pin) {
+      setError("Введите email и PIN");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, pin }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        localStorage.setItem("be_session_token", json.token);
+        localStorage.setItem("be_teacher", JSON.stringify(json.teacher));
+        onLogin(json.token, json.teacher);
+      } else {
+        setError(json.error || "Не удалось войти");
+      }
+    } catch {
+      setError("Сервер недоступен. Попробуйте позже");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                  minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
+      <div style={{ textAlign: "center", padding: 24, maxWidth: 340, width: "100%" }}>
+
+        <div style={{ background: C.navy, width: 68, height: 68, borderRadius: 20,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 30, margin: "0 auto 18px" }}>🔐</div>
+
+        <div style={{ fontFamily: "Georgia,serif", fontSize: 24, color: C.navy, marginBottom: 6 }}>
+          BE<span style={{ color: C.gold }}>School</span>
+        </div>
+        <div style={{ fontSize: 13, color: C.gray, marginBottom: 26 }}>
+          Вход для учителей
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ textAlign: "left" }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              Email (как в МойКласс)
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="nurgul@beschool.kg"
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              PIN
+            </label>
+            <input
+              type="password"
+              inputMode="numeric"
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              placeholder="••••"
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+
+          {error && (
+            <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                          padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: loading ? C.border : C.navy,
+                     color: loading ? C.gray : "#fff", border: "none", borderRadius: 12,
+                     padding: 14, fontSize: 14, fontWeight: 600,
+                     cursor: loading ? "default" : "pointer" }}>
+            {loading ? "Входим..." : "Войти"}
+          </button>
+        </form>
+
+        <div style={{ fontSize: 11, color: C.gray, marginTop: 18, lineHeight: 1.6 }}>
+          PIN выдаёт администратор школы.<br/>
+          Не помните PIN — обратитесь к директору.
+        </div>
+
+        <button onClick={onBackToRole}
+          style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                   marginTop: 16, cursor: "pointer", textDecoration: "underline" }}>
+          ← Назад
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TEACHER CLASSES VIEW (группы конкретного учителя) ──────────────────────
+function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
+  const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`${API_URL}/teacher/classes`, {
+      headers: { "x-session-token": token },
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) setClasses(json.data);
+        else setError(json.error || "Не удалось загрузить группы");
+      })
+      .catch(() => setError("Сервер недоступен"))
+      .finally(() => setLoading(false));
+  }, [token]);
+
+  return (
+    <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
+                  minHeight: "100vh", padding: 16, maxWidth: 480, margin: "0 auto" }}>
+
+      <div style={{ background: C.navy, borderRadius: 14, padding: "18px 18px 16px", marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ fontFamily: "Georgia,serif", fontSize: 16, color: C.gold }}>
+            BE<span style={{ color: "#fff" }}>School</span>
+          </div>
+          <button onClick={onLogout}
+            style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
+                     fontSize: 11, fontWeight: 600, padding: "5px 11px", borderRadius: 16,
+                     cursor: "pointer" }}>
+            Выйти
+          </button>
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: "#fff", marginTop: 8 }}>
+          {teacher?.name || teacher?.email}
+        </div>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>
+          Ваши группы
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{ textAlign: "center", padding: 40, color: C.gray, fontSize: 13 }}>
+          Загружаем группы из МойКласс...
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: C.redLt, color: C.red, borderRadius: 10,
+                      padding: "12px 14px", fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && classes.length === 0 && (
+        <div style={{ textAlign: "center", padding: 40, color: C.gray, fontSize: 13 }}>
+          У вас пока нет назначенных групп.<br/>Обратитесь к администратору.
+        </div>
+      )}
+
+      {classes.map(c => (
+        <div key={c.classId}
+          onClick={() => onOpenClass(c)}
+          style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 12,
+                   padding: 14, marginBottom: 10, cursor: "pointer",
+                   display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.navy, marginBottom: 3 }}>
+              {c.name}
+            </div>
+            <span style={{ background: C.sky, color: C.navy, fontSize: 10, fontWeight: 600,
+                          padding: "2px 8px", borderRadius: 10 }}>
+              {c.level}
+            </span>
+          </div>
+          <div style={{ color: C.gray, fontSize: 18 }}>→</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── ADMIN PANEL (управление учителями) ──────────────────────────────────────
+function AdminPanel({ onBack }) {
+  const [managers, setManagers] = useState([]);
+  const [teachers, setTeachers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ managerId: "", email: "", name: "", pin: "" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function loadAll() {
+    setLoading(true);
+    Promise.all([
+      fetch(`${API_URL}/admin/managers`).then(r => r.json()),
+      fetch(`${API_URL}/admin/teachers`).then(r => r.json()),
+    ]).then(([m, t]) => {
+      if (m.ok) setManagers(m.data);
+      if (t.ok) setTeachers(t.data);
+    }).finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadAll(); }, []);
+
+  function selectManager(managerId) {
+    const m = managers.find(x => String(x.managerId) === String(managerId));
+    setForm(f => ({
+      ...f,
+      managerId,
+      name: m?.name || f.name,
+      email: m?.email || f.email,
+    }));
+  }
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    setMsg("");
+    if (!form.managerId || !form.email || !form.pin) {
+      setMsg("Заполните сотрудника, email и PIN");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_URL}/admin/teachers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setMsg(`✅ ${json.data.name} добавлен(а)`);
+        setForm({ managerId: "", email: "", name: "", pin: "" });
+        loadAll();
+      } else {
+        setMsg(json.error || "Ошибка");
+      }
+    } catch {
+      setMsg("Сервер недоступен");
+    }
+    setSaving(false);
+  }
+
+  async function handleDelete(email) {
+    if (!confirm(`Удалить доступ для ${email}?`)) return;
+    await fetch(`${API_URL}/admin/teachers/${encodeURIComponent(email)}`, { method: "DELETE" });
+    loadAll();
+  }
+
+  return (
+    <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
+                  minHeight: "100vh", padding: 16, maxWidth: 520, margin: "0 auto" }}>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onBack}
+          style={{ background: "none", border: "none", color: C.gray, fontSize: 20, cursor: "pointer" }}>←</button>
+        <div style={{ fontSize: 16, fontWeight: 600, color: C.navy }}>Управление учителями</div>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 12 }}>
+          ➕ Добавить доступ учителю
+        </div>
+        <form onSubmit={handleAdd}>
+          <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: C.gray,
+                          marginBottom: 5, textTransform: "uppercase" }}>Сотрудник (из МойКласс)</label>
+          <select value={form.managerId} onChange={e => selectManager(e.target.value)}
+            style={{ width: "100%", padding: "9px 11px", border: `1px solid ${C.border}`,
+                     borderRadius: 8, fontSize: 13, color: C.navy, background: C.bg,
+                     marginBottom: 10, boxSizing: "border-box" }}>
+            <option value="">— выбрать —</option>
+            {managers.map(m => (
+              <option key={m.managerId} value={m.managerId}>
+                {m.name} {m.email ? `(${m.email})` : ""}
+              </option>
+            ))}
+          </select>
+
+          <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: C.gray,
+                          marginBottom: 5, textTransform: "uppercase" }}>Email для входа</label>
+          <input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}
+            placeholder="nurgul@beschool.kg"
+            style={{ width: "100%", padding: "9px 11px", border: `1px solid ${C.border}`,
+                     borderRadius: 8, fontSize: 13, color: C.navy, background: C.bg,
+                     marginBottom: 10, boxSizing: "border-box" }} />
+
+          <label style={{ display: "block", fontSize: 10, fontWeight: 600, color: C.gray,
+                          marginBottom: 5, textTransform: "uppercase" }}>PIN (придумайте)</label>
+          <input value={form.pin} onChange={e => setForm({ ...form, pin: e.target.value })}
+            placeholder="1234"
+            style={{ width: "100%", padding: "9px 11px", border: `1px solid ${C.border}`,
+                     borderRadius: 8, fontSize: 13, color: C.navy, background: C.bg,
+                     marginBottom: 14, boxSizing: "border-box" }} />
+
+          {msg && <div style={{ fontSize: 12, color: msg.startsWith("✅") ? C.green : C.red, marginBottom: 10 }}>{msg}</div>}
+
+          <button type="submit" disabled={saving}
+            style={{ width: "100%", background: C.navy, color: "#fff", border: "none",
+                     borderRadius: 10, padding: 12, fontSize: 13, fontWeight: 600,
+                     cursor: saving ? "default" : "pointer" }}>
+            {saving ? "Сохраняем..." : "Добавить"}
+          </button>
+        </form>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase",
+                    letterSpacing: ".06em", marginBottom: 10 }}>
+        Учителя с доступом ({teachers.length})
+      </div>
+
+      {loading && <div style={{ color: C.gray, fontSize: 13 }}>Загрузка...</div>}
+
+      {teachers.map(t => (
+        <div key={t.email} style={{ background: "#fff", border: `1px solid ${C.border}`,
+                                    borderRadius: 10, padding: 12, marginBottom: 8,
+                                    display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.navy }}>{t.name}</div>
+            <div style={{ fontSize: 11, color: C.gray }}>{t.email} · managerId {t.managerId}</div>
+          </div>
+          <button onClick={() => handleDelete(t.email)}
+            style={{ background: C.redLt, color: C.red, border: "none", borderRadius: 8,
+                     padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+            Удалить
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen] = useState("role"); // role | dashboard | portfolio
+  const [screen, setScreen]   = useState("role"); // role | login | classes | dashboard | portfolio
   const [selected, setSelected] = useState(null);
+  const [session, setSession] = useState(null); // { token, teacher }
+  const [activeClass, setActiveClass] = useState(null);
 
+  // Автологин: проверяем сохранённую сессию при загрузке
+  useEffect(() => {
+    const token = localStorage.getItem("be_session_token");
+    const teacherRaw = localStorage.getItem("be_teacher");
+    if (token && teacherRaw) {
+      try {
+        const teacher = JSON.parse(teacherRaw);
+        setSession({ token, teacher });
+      } catch {}
+    }
+  }, []);
+
+  function handleLogin(token, teacher) {
+    setSession({ token, teacher });
+    setScreen("classes");
+  }
+
+  function handleLogout() {
+    const token = session?.token;
+    if (token) {
+      fetch(`${API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { "x-session-token": token },
+      }).catch(() => {});
+    }
+    localStorage.removeItem("be_session_token");
+    localStorage.removeItem("be_teacher");
+    setSession(null);
+    setScreen("role");
+  }
+
+  // ── role picker ──
   if (screen === "role") return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
                   minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
@@ -488,10 +914,15 @@ export default function App() {
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <button onClick={() => setScreen("dashboard")}
+          <button
+            onClick={() => {
+              // Уже есть сохранённая сессия — сразу к группам
+              if (session) setScreen("classes");
+              else setScreen("login");
+            }}
             style={{ background: C.navy, color: "#fff", border: "none", borderRadius: 12,
                      padding: 15, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            ✏️ Учитель / Администратор
+            ✏️ Я учитель{session ? ` — ${session.teacher.name || session.teacher.email}` : ""}
           </button>
           <button onClick={() => { setSelected({ id: 9602487, name: "Айдана Бекова" }); setScreen("portfolio"); }}
             style={{ background: "#fff", color: C.navy, border: `2px solid ${C.navy}`,
@@ -504,20 +935,50 @@ export default function App() {
           Родители открывают персональную ссылку из WhatsApp.<br/>
           Данные обновляются автоматически из МойКласс.
         </div>
+
+        <button onClick={() => setScreen("admin")}
+          style={{ background: "none", border: "none", color: C.gray, fontSize: 11,
+                   marginTop: 18, cursor: "pointer", opacity: .6 }}>
+          ⚙️ Администратор
+        </button>
       </div>
     </div>
   );
 
+  // ── admin panel ──
+  if (screen === "admin") return (
+    <AdminPanel onBack={() => setScreen("role")} />
+  );
+
+  // ── teacher login ──
+  if (screen === "login") return (
+    <LoginScreen onLogin={handleLogin} onBackToRole={() => setScreen("role")} />
+  );
+
+  // ── teacher's classes list ──
+  if (screen === "classes") return (
+    <TeacherClasses
+      teacher={session?.teacher}
+      token={session?.token}
+      onOpenClass={cls => { setActiveClass(cls); setScreen("dashboard"); }}
+      onLogout={handleLogout}
+    />
+  );
+
+  // ── student portfolio ──
   if (screen === "portfolio") return (
     <PortfolioLoader
       userId={selected?.id}
       studentName={selected?.name}
-      onBack={() => setScreen("dashboard")}
+      onBack={() => setScreen(session ? "dashboard" : "role")}
     />
   );
 
+  // ── dashboard (students within selected class, or demo fallback) ──
   return (
     <Dashboard
+      classInfo={activeClass}
+      onBackToClasses={session ? () => setScreen("classes") : null}
       onView={s => { setSelected(s); setScreen("portfolio"); }}
     />
   );
