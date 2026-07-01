@@ -171,7 +171,7 @@ const Notice = ({ icon, text }) => (
 );
 
 // ─── PAYMENT MODAL (MKassa QR: абонемент/сумма → QR → поллинг статуса) ──────
-function PaymentModal({ userId, studentName, onClose }) {
+function PaymentModal({ userId, studentName, onClose, authHeader = {} }) {
   const [amount, setAmount] = useState("");
   const [stage, setStage] = useState("form"); // form | creating | qr | success | error
   const [payment, setPayment] = useState(null); // { id, paymentToken, amountSom, status }
@@ -187,7 +187,7 @@ function PaymentModal({ userId, studentName, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_URL}/mkassa/subscriptions/${userId}`)
+    fetch(`${API_URL}/mkassa/subscriptions/${userId}`, { headers: authHeader })
       .then(r => r.json())
       .then(json => {
         if (cancelled) return;
@@ -212,7 +212,7 @@ function PaymentModal({ userId, studentName, onClose }) {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/mkassa/status/${id}`);
+        const res = await fetch(`${API_URL}/mkassa/status/${id}`, { headers: authHeader });
         const json = await res.json();
         const status = json.status || json.data?.status;
         if (status === "paid") {
@@ -237,7 +237,7 @@ function PaymentModal({ userId, studentName, onClose }) {
     try {
       const res = await fetch(`${API_URL}/mkassa/create-payment`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeader },
         body: JSON.stringify({
           userId,
           ...(userSubscriptionId ? { userSubscriptionId } : { amountSom }),
@@ -273,7 +273,7 @@ function PaymentModal({ userId, studentName, onClose }) {
 
   function handleCancel() {
     if (payment?.id) {
-      fetch(`${API_URL}/mkassa/cancel/${payment.id}`, { method: "POST" }).catch(() => {});
+      fetch(`${API_URL}/mkassa/cancel/${payment.id}`, { method: "POST", headers: authHeader }).catch(() => {});
     }
     if (pollRef.current) clearInterval(pollRef.current);
     onClose();
@@ -497,7 +497,7 @@ function PaymentModal({ userId, studentName, onClose }) {
 }
 
 // ─── PORTFOLIO LOADER (fetches real data from backend) ───────────────────────
-function PortfolioLoader({ userId, studentName, onBack }) {
+function PortfolioLoader({ userId, studentName, onBack, authHeader = {}, onLogout }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -508,7 +508,7 @@ function PortfolioLoader({ userId, studentName, onBack }) {
     setLoading(true);
     setError(null);
 
-    fetch(`${API_URL}/p/${userId}`)
+    fetch(`${API_URL}/p/${userId}`, { headers: authHeader })
       .then(res => res.json())
       .then(json => {
         if (cancelled) return;
@@ -557,13 +557,14 @@ function PortfolioLoader({ userId, studentName, onBack }) {
           ⚠️ Демо-данные (МойКласс недоступен: {error})
         </div>
       )}
-      <Portfolio data={data} studentName={studentName} onBack={onBack} />
+      <Portfolio data={data} studentName={studentName} onBack={onBack}
+                 authHeader={authHeader} onLogout={onLogout} />
     </>
   );
 }
 
 // ─── PORTFOLIO VIEW ───────────────────────────────────────────────────────────
-function Portfolio({ data, studentName, onBack }) {
+function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
   const d = data || DEMO;
   const [showPayment, setShowPayment] = useState(false);
 
@@ -581,6 +582,12 @@ function Portfolio({ data, studentName, onBack }) {
             style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
                      fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20,
                      cursor: "pointer", marginBottom: 14 }}>← Все ученики</button>
+        )}
+        {onLogout && (
+          <button onClick={onLogout}
+            style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
+                     fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20,
+                     cursor: "pointer", marginBottom: 14, float: "right" }}>Выйти</button>
         )}
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
@@ -721,6 +728,7 @@ function Portfolio({ data, studentName, onBack }) {
           userId={d.userId}
           studentName={studentName || d.name}
           onClose={() => setShowPayment(false)}
+          authHeader={authHeader}
         />
       )}
     </div>
@@ -1001,6 +1009,233 @@ function LoginScreen({ onLogin, onBackToRole }) {
   );
 }
 
+// ─── PARENT LOGIN SCREEN (ID ученика из МойКласс + пароль, по умолчанию 12345678) ─
+function ParentLoginScreen({ onLogin, onBackToRole }) {
+  const [userId, setUserId] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (!userId || !password) {
+      setError("Введите ID ученика и пароль");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/parent/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, password }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        localStorage.setItem("be_parent_token", json.token);
+        localStorage.setItem("be_parent_userId", String(json.userId));
+        onLogin(json.token, json.userId, json.mustChangePassword);
+      } else {
+        setError(json.error || "Не удалось войти");
+      }
+    } catch {
+      setError("Сервер недоступен. Попробуйте позже");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                  minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
+      <div style={{ textAlign: "center", padding: 24, maxWidth: 340, width: "100%" }}>
+
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Logo height={48} />
+        </div>
+
+        <div style={{ fontSize: 13, color: C.gray, marginBottom: 26 }}>
+          Вход для учеников и родителей
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ textAlign: "left" }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              ID ученика
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={userId}
+              onChange={e => setUserId(e.target.value)}
+              placeholder="Например, 9602487"
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              Пароль
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="По умолчанию 12345678"
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+
+          {error && (
+            <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                          padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: loading ? C.border : C.navy,
+                     color: loading ? C.gray : "#fff", border: "none", borderRadius: 12,
+                     padding: 14, fontSize: 14, fontWeight: 600,
+                     cursor: loading ? "default" : "pointer" }}>
+            {loading ? "Входим..." : "Войти"}
+          </button>
+        </form>
+
+        <div style={{ fontSize: 11, color: C.gray, marginTop: 18, lineHeight: 1.6 }}>
+          ID ученика — тот же, что и в ссылке на портфолио.<br/>
+          Пароль по умолчанию: 12345678 (при первом входе попросим сменить).<br/>
+          Забыли новый пароль — обратитесь к администратору для сброса.
+        </div>
+
+        <button onClick={onBackToRole}
+          style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                   marginTop: 16, cursor: "pointer", textDecoration: "underline" }}>
+          ← Назад
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CHANGE PASSWORD SCREEN (обязателен при первом входе с паролем по умолчанию) ─
+function ChangePasswordScreen({ authHeader, onDone, onLogout }) {
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    if (pw1.length !== 8) {
+      setError("Пароль должен содержать ровно 8 символов");
+      return;
+    }
+    if (pw1 !== pw2) {
+      setError("Пароли не совпадают");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/parent/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ newPassword: pw1 }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        onDone();
+      } else {
+        setError(json.error || "Не удалось сменить пароль");
+      }
+    } catch {
+      setError("Сервер недоступен. Попробуйте позже");
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                  minHeight: "100vh", background: C.bg, fontFamily: "system-ui,sans-serif" }}>
+      <div style={{ textAlign: "center", padding: 24, maxWidth: 340, width: "100%" }}>
+
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
+          <Logo height={48} />
+        </div>
+
+        <div style={{ fontSize: 13, color: C.navy, fontWeight: 600, marginBottom: 6 }}>
+          Смена пароля
+        </div>
+        <div style={{ fontSize: 12, color: C.gray, marginBottom: 22, lineHeight: 1.5 }}>
+          Вы вошли с паролем по умолчанию. Придумайте новый пароль
+          из 8 символов, чтобы продолжить.
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ textAlign: "left" }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              Новый пароль (8 символов)
+            </label>
+            <input
+              type="password"
+              value={pw1}
+              onChange={e => setPw1(e.target.value)}
+              maxLength={8}
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ marginBottom: 18 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 5, textTransform: "uppercase", letterSpacing: ".04em" }}>
+              Повторите пароль
+            </label>
+            <input
+              type="password"
+              value={pw2}
+              onChange={e => setPw2(e.target.value)}
+              maxLength={8}
+              style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box" }}
+            />
+          </div>
+
+          {error && (
+            <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                          padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>
+              {error}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", background: loading ? C.border : C.navy,
+                     color: loading ? C.gray : "#fff", border: "none", borderRadius: 12,
+                     padding: 14, fontSize: 14, fontWeight: 600,
+                     cursor: loading ? "default" : "pointer" }}>
+            {loading ? "Сохраняем..." : "Сохранить и войти"}
+          </button>
+        </form>
+
+        {onLogout && (
+          <button onClick={onLogout}
+            style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                     marginTop: 16, cursor: "pointer", textDecoration: "underline" }}>
+            ← Выйти
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── TEACHER CLASSES VIEW (группы конкретного учителя) ──────────────────────
 function TeacherClasses({ teacher, token, onOpenClass, onLogout }) {
   const [classes, setClasses] = useState([]);
@@ -1197,19 +1432,26 @@ function AdminPanelInner({ onBack, adminToken }) {
   const authHeaders = { "x-admin-token": adminToken };
   const [managers, setManagers] = useState([]);
   const [teachers, setTeachers] = useState([]);
+  const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ managerId: "", email: "", name: "", pin: "" });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
+
+  const [resetId, setResetId] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetMsg, setResetMsg] = useState("");
 
   function loadAll() {
     setLoading(true);
     Promise.all([
       fetch(`${API_URL}/admin/managers`, { headers: authHeaders }).then(r => r.json()),
       fetch(`${API_URL}/admin/teachers`, { headers: authHeaders }).then(r => r.json()),
-    ]).then(([m, t]) => {
+      fetch(`${API_URL}/admin/students`, { headers: authHeaders }).then(r => r.json()),
+    ]).then(([m, t, s]) => {
       if (m.ok) setManagers(m.data);
       if (t.ok) setTeachers(t.data);
+      if (s.ok) setStudents(s.data);
     }).finally(() => setLoading(false));
   }
 
@@ -1259,6 +1501,29 @@ function AdminPanelInner({ onBack, adminToken }) {
       method: "DELETE", headers: authHeaders,
     });
     loadAll();
+  }
+
+  async function handleResetPassword(userId) {
+    const uid = String(userId).trim();
+    if (!uid) { setResetMsg("Введите ID ученика"); return; }
+    setResetSaving(true);
+    setResetMsg("");
+    try {
+      const res = await fetch(`${API_URL}/admin/students/${encodeURIComponent(uid)}/reset-password`, {
+        method: "POST", headers: authHeaders,
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setResetMsg(`✅ Пароль ученика #${uid} сброшен на 12345678`);
+        setResetId("");
+        loadAll();
+      } else {
+        setResetMsg(json.error || "Ошибка");
+      }
+    } catch {
+      setResetMsg("Сервер недоступен");
+    }
+    setResetSaving(false);
   }
 
   function handleLogout() {
@@ -1427,6 +1692,56 @@ function AdminPanelInner({ onBack, adminToken }) {
         )}
       </div>
 
+      <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+          🔑 Сброс пароля ученика
+        </div>
+        <div style={{ fontSize: 11, color: C.gray, marginBottom: 12, lineHeight: 1.5 }}>
+          Ученики входят по своему ID из МойКласс (тот же, что и в ссылке на
+          портфолио). Пароль по умолчанию — 12345678, при первом входе
+          система просит сменить его на свой. Если ученик забыл новый пароль,
+          сбрось его здесь — он снова сможет войти паролем по умолчанию.
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <input value={resetId} onChange={e => setResetId(e.target.value)}
+            placeholder="ID ученика"
+            inputMode="numeric"
+            style={{ flex: 1, padding: "9px 11px", border: `1px solid ${C.border}`,
+                     borderRadius: 8, fontSize: 13, color: C.navy, background: C.bg,
+                     boxSizing: "border-box" }} />
+          <button type="button" onClick={() => handleResetPassword(resetId)} disabled={resetSaving}
+            style={{ background: C.navy, color: "#fff", border: "none", borderRadius: 8,
+                     padding: "0 16px", fontSize: 12, fontWeight: 600,
+                     cursor: resetSaving ? "default" : "pointer" }}>
+            {resetSaving ? "..." : "Сбросить"}
+          </button>
+        </div>
+
+        {resetMsg && (
+          <div style={{ fontSize: 12, color: resetMsg.startsWith("✅") ? C.green : C.red, marginBottom: 10 }}>
+            {resetMsg}
+          </div>
+        )}
+
+        <div style={{ fontSize: 10, fontWeight: 700, color: C.gray, textTransform: "uppercase",
+                      marginBottom: 6 }}>
+          Ученики со своим паролем ({students.length})
+        </div>
+        {students.length === 0 && <div style={{ fontSize: 12, color: C.gray }}>Никто ещё не менял пароль</div>}
+        {students.map(s => (
+          <div key={s.userId} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                                       fontSize: 13, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+            <span style={{ fontFamily: "monospace", color: C.navy }}>ID {s.userId}</span>
+            <button onClick={() => handleResetPassword(s.userId)}
+              style={{ background: C.redLt, color: C.red, border: "none", borderRadius: 8,
+                       padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              Сбросить пароль
+            </button>
+          </div>
+        ))}
+      </div>
+
       <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase",
                     letterSpacing: ".06em", marginBottom: 10 }}>
         Учителя с доступом ({teachers.length})
@@ -1455,13 +1770,15 @@ function AdminPanelInner({ onBack, adminToken }) {
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [screen, setScreen]   = useState("role"); // role | login | classes | dashboard | portfolio
+  const [screen, setScreen]   = useState("role"); // role | login | parent-login | change-password | classes | dashboard | portfolio
   const [selected, setSelected] = useState(null);
   const [session, setSession] = useState(null); // { token, teacher }
+  const [parentSession, setParentSession] = useState(null); // { token, userId }
+  const [viewerMode, setViewerMode] = useState(null); // 'teacher' | 'parent' — кто сейчас смотрит /p/:id
   const [activeClass, setActiveClass] = useState(null);
 
-  // Автологин: проверяем сохранённую сессию ЧЕРЕЗ backend (не доверяем localStorage вслепую —
-  // backend хранит сессии в памяти и может их терять при передеплое)
+  // Автологин учителя: проверяем сохранённую сессию ЧЕРЕЗ backend (не доверяем
+  // localStorage вслепую — backend хранит сессии в памяти и может их терять при передеплое)
   useEffect(() => {
     const token = localStorage.getItem("be_session_token");
     if (!token) return;
@@ -1483,6 +1800,27 @@ export default function App() {
       });
   }, []);
 
+  // Автологин ученика/родителя — тот же паттерн, отдельная сессия. Если пароль
+  // ещё не сменён (mustChangePassword) — сразу отправляем на экран смены,
+  // даже при повторном открытии страницы.
+  useEffect(() => {
+    const token = localStorage.getItem("be_parent_token");
+    if (!token) return;
+
+    fetch(`${API_URL}/parent/me`, { headers: { "x-parent-token": token } })
+      .then(r => r.json())
+      .then(json => {
+        if (json.ok) {
+          setParentSession({ token, userId: json.userId });
+          if (json.mustChangePassword) setScreen("change-password");
+        } else {
+          localStorage.removeItem("be_parent_token");
+          localStorage.removeItem("be_parent_userId");
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   function handleLogin(token, teacher) {
     setSession({ token, teacher });
     setScreen("classes");
@@ -1501,6 +1839,46 @@ export default function App() {
     setSession(null);
     setScreen("role");
   }
+
+  function handleParentLogin(token, userId, mustChangePassword) {
+    setParentSession({ token, userId });
+    if (mustChangePassword) {
+      setScreen("change-password");
+    } else {
+      setSelected({ id: userId });
+      setViewerMode("parent");
+      setScreen("portfolio");
+    }
+  }
+
+  function handlePasswordChanged() {
+    setSelected({ id: parentSession?.userId });
+    setViewerMode("parent");
+    setScreen("portfolio");
+  }
+
+  function handleParentLogout() {
+    const token = parentSession?.token;
+    if (token) {
+      fetch(`${API_URL}/parent/logout`, {
+        method: "POST",
+        headers: { "x-parent-token": token },
+      }).catch(() => {});
+    }
+    localStorage.removeItem("be_parent_token");
+    localStorage.removeItem("be_parent_userId");
+    setParentSession(null);
+    setScreen("role");
+  }
+
+  // Заголовок авторизации для запросов к /p/:id и /mkassa/* — зависит от того,
+  // кто сейчас смотрит портфолио (учитель видит любого своего ученика,
+  // родитель — только своего ребёнка, см. checkStudentAccess на бэкенде)
+  const authHeader = viewerMode === "teacher" && session
+    ? { "x-session-token": session.token }
+    : viewerMode === "parent" && parentSession
+    ? { "x-parent-token": parentSession.token }
+    : {};
 
   // ── role picker ──
   if (screen === "role") return (
@@ -1528,15 +1906,24 @@ export default function App() {
                      padding: 15, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
             ✏️ Я учитель{session ? ` — ${session.teacher.name || session.teacher.email}` : ""}
           </button>
-          <button onClick={() => { setSelected({ id: 9602487, name: "Айдана Бекова" }); setScreen("portfolio"); }}
+          <button
+            onClick={() => {
+              if (parentSession) {
+                setSelected({ id: parentSession.userId });
+                setViewerMode("parent");
+                setScreen("portfolio");
+              } else {
+                setScreen("parent-login");
+              }
+            }}
             style={{ background: "#fff", color: C.navy, border: `2px solid ${C.navy}`,
                      borderRadius: 12, padding: 15, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
-            👨‍👩‍👧 Я родитель (открыть по ссылке)
+            👨‍👩‍👧 Ученик / родитель{parentSession ? ` — ID ${parentSession.userId}` : ""}
           </button>
         </div>
 
         <div style={{ fontSize: 11, color: C.gray, marginTop: 20, lineHeight: 1.7 }}>
-          Родители открывают персональную ссылку из WhatsApp.<br/>
+          Вход по ID ученика и паролю, который выдаёт школа.<br/>
           Данные обновляются автоматически из МойКласс.
         </div>
 
@@ -1559,6 +1946,20 @@ export default function App() {
     <LoginScreen onLogin={handleLogin} onBackToRole={() => setScreen("role")} />
   );
 
+  // ── parent/student login ──
+  if (screen === "parent-login") return (
+    <ParentLoginScreen onLogin={handleParentLogin} onBackToRole={() => setScreen("role")} />
+  );
+
+  // ── mandatory password change (first login with default password) ──
+  if (screen === "change-password") return (
+    <ChangePasswordScreen
+      authHeader={{ "x-parent-token": parentSession?.token }}
+      onDone={handlePasswordChanged}
+      onLogout={handleParentLogout}
+    />
+  );
+
   // ── teacher's classes list ──
   if (screen === "classes") return (
     <TeacherClasses
@@ -1574,7 +1975,9 @@ export default function App() {
     <PortfolioLoader
       userId={selected?.id}
       studentName={selected?.name}
-      onBack={() => setScreen(session ? "dashboard" : "role")}
+      authHeader={authHeader}
+      onBack={viewerMode === "teacher" ? () => setScreen("dashboard") : null}
+      onLogout={viewerMode === "parent" ? handleParentLogout : null}
     />
   );
 
@@ -1583,7 +1986,7 @@ export default function App() {
     <Dashboard
       classInfo={activeClass}
       onBackToClasses={session ? () => setScreen("classes") : null}
-      onView={s => { setSelected(s); setScreen("portfolio"); }}
+      onView={s => { setSelected(s); setViewerMode("teacher"); setScreen("portfolio"); }}
     />
   );
 }
