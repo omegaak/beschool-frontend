@@ -170,13 +170,32 @@ const Notice = ({ icon, text }) => (
   </div>
 );
 
-// ─── PAYMENT MODAL (MKassa QR: кнопка → QR → поллинг статуса) ───────────────
+// ─── PAYMENT MODAL (MKassa QR: абонемент/сумма → QR → поллинг статуса) ──────
 function PaymentModal({ userId, studentName, onClose }) {
   const [amount, setAmount] = useState("");
   const [stage, setStage] = useState("form"); // form | creating | qr | success | error
   const [payment, setPayment] = useState(null); // { id, paymentToken, amountSom, status }
   const [error, setError] = useState("");
   const pollRef = useRef(null);
+
+  // Активные абонементы ученика — сумма и скидка уже посчитаны МойКласс,
+  // ручной ввод остаётся только запасным вариантом
+  const [subsLoading, setSubsLoading] = useState(true);
+  const [subs, setSubs] = useState([]);
+  const [manualMode, setManualMode] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_URL}/mkassa/subscriptions/${userId}`)
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        setSubs(json.ok && Array.isArray(json.data) ? json.data : []);
+      })
+      .catch(() => { if (!cancelled) setSubs([]); })
+      .finally(() => { if (!cancelled) setSubsLoading(false); });
+    return () => { cancelled = true; };
+  }, [userId]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -201,11 +220,10 @@ function PaymentModal({ userId, studentName, onClose }) {
     }, 3000);
   }
 
-  async function handleCreate(e) {
-    e.preventDefault();
+  // Сумма для абонемента считается сервером живьём из МойКласс (remindSumm/
+  // price с учётом скидки) — то, что передаём здесь, только для ручного режима.
+  async function submitPayment({ userSubscriptionId, amountSom, label }) {
     setError("");
-    const sum = Number(amount);
-    if (!sum || sum <= 0) { setError("Введите сумму в сомах"); return; }
     setStage("creating");
     try {
       const res = await fetch(`${API_URL}/mkassa/create-payment`, {
@@ -213,8 +231,8 @@ function PaymentModal({ userId, studentName, onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          amountSom: sum,
-          comment: `Оплата — ${studentName || userId}`,
+          ...(userSubscriptionId ? { userSubscriptionId } : { amountSom }),
+          comment: `Оплата — ${studentName || userId}${label ? " · " + label : ""}`,
         }),
       });
       const json = await res.json();
@@ -231,6 +249,17 @@ function PaymentModal({ userId, studentName, onClose }) {
       setError("Сервер недоступен");
       setStage("form");
     }
+  }
+
+  function handlePaySubscription(sub) {
+    submitPayment({ userSubscriptionId: sub.userSubscriptionId, label: sub.level });
+  }
+
+  function handleManualSubmit(e) {
+    e.preventDefault();
+    const sum = Number(amount);
+    if (!sum || sum <= 0) { setError("Введите сумму в сомах"); return; }
+    submitPayment({ amountSom: sum });
   }
 
   function handleCancel() {
@@ -254,42 +283,111 @@ function PaymentModal({ userId, studentName, onClose }) {
                     width: "100%", fontFamily: "system-ui,sans-serif", textAlign: "center" }}>
 
         {stage === "form" && (
-          <form onSubmit={handleCreate}>
+          <div>
             <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
               Оплата обучения
             </div>
             <div style={{ fontSize: 12, color: C.gray, marginBottom: 18 }}>
               {studentName || `Ученик #${userId}`}
             </div>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
-                            marginBottom: 6, textTransform: "uppercase", letterSpacing: ".04em",
-                            textAlign: "left" }}>
-              Сумма, сом
-            </label>
-            <input
-              type="number" inputMode="decimal" min="1" value={amount}
-              onChange={e => setAmount(e.target.value)}
-              placeholder="1000" autoFocus
-              style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.border}`,
-                       borderRadius: 10, fontSize: 16, color: C.navy, background: "#fff",
-                       outline: "none", boxSizing: "border-box", marginBottom: 14, textAlign: "center" }}
-            />
-            {error && (
-              <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
-                            padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>{error}</div>
+
+            {subsLoading && (
+              <div style={{ fontSize: 13, color: C.gray, padding: "16px 0" }}>
+                Загружаем абонемент из МойКласс...
+              </div>
             )}
-            <button type="submit"
-              style={{ width: "100%", background: C.gold, color: C.navy, border: "none",
-                       borderRadius: 12, padding: 14, fontSize: 14, fontWeight: 700,
-                       cursor: "pointer", marginBottom: 10 }}>
-              Получить QR для оплаты
-            </button>
-            <button type="button" onClick={onClose}
-              style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
-                       cursor: "pointer", textDecoration: "underline" }}>
-              Отмена
-            </button>
-          </form>
+
+            {!subsLoading && !manualMode && subs.length > 0 && (
+              <>
+                {subs.map(s => (
+                  <div key={s.userSubscriptionId}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 14,
+                             marginBottom: 10, textAlign: "left" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between",
+                                  alignItems: "center", marginBottom: 6 }}>
+                      <span style={{ background: C.sky, color: C.navy, fontSize: 10, fontWeight: 600,
+                                     padding: "2px 8px", borderRadius: 10 }}>
+                        {s.level || "Абонемент"}
+                      </span>
+                      <span style={{ fontSize: 18, fontWeight: 700, color: C.navy }}>{s.due} сом</span>
+                    </div>
+                    {(s.discountPct > 0 || s.extraDiscount > 0) && (
+                      <div style={{ fontSize: 11, color: C.green, marginBottom: 8 }}>
+                        🏷 Скидка{s.discountPct > 0 ? ` ${s.discountPct}%` : ""}
+                        {s.extraDiscount > 0 ? `${s.discountPct > 0 ? " + " : " "}компенсация ${s.extraDiscount} сом` : ""}
+                        {" "}· {s.originalPrice} → {s.price} сом
+                      </div>
+                    )}
+                    <button onClick={() => handlePaySubscription(s)}
+                      style={{ width: "100%", background: C.gold, color: C.navy, border: "none",
+                               borderRadius: 10, padding: 11, fontSize: 13, fontWeight: 700,
+                               cursor: "pointer" }}>
+                      Оплатить {s.due} сом
+                    </button>
+                  </div>
+                ))}
+                {error && (
+                  <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                                padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>{error}</div>
+                )}
+                <button type="button" onClick={() => setManualMode(true)}
+                  style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                           cursor: "pointer", textDecoration: "underline", marginBottom: 6 }}>
+                  Ввести сумму вручную
+                </button>
+                <br />
+                <button type="button" onClick={onClose}
+                  style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                           cursor: "pointer", textDecoration: "underline" }}>
+                  Отмена
+                </button>
+              </>
+            )}
+
+            {!subsLoading && (manualMode || subs.length === 0) && (
+              <form onSubmit={handleManualSubmit}>
+                {subs.length === 0 && (
+                  <Notice icon="ℹ️" text="Активный абонемент не найден в МойКласс — введите сумму вручную" />
+                )}
+                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                                marginBottom: 6, textTransform: "uppercase", letterSpacing: ".04em",
+                                textAlign: "left" }}>
+                  Сумма, сом
+                </label>
+                <input
+                  type="number" inputMode="decimal" min="1" value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder="1000" autoFocus
+                  style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.border}`,
+                           borderRadius: 10, fontSize: 16, color: C.navy, background: "#fff",
+                           outline: "none", boxSizing: "border-box", marginBottom: 14, textAlign: "center" }}
+                />
+                {error && (
+                  <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                                padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>{error}</div>
+                )}
+                <button type="submit"
+                  style={{ width: "100%", background: C.gold, color: C.navy, border: "none",
+                           borderRadius: 12, padding: 14, fontSize: 14, fontWeight: 700,
+                           cursor: "pointer", marginBottom: 10 }}>
+                  Получить QR для оплаты
+                </button>
+                {subs.length > 0 && (
+                  <button type="button" onClick={() => setManualMode(false)}
+                    style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                             cursor: "pointer", textDecoration: "underline", display: "block",
+                             margin: "0 auto 8px" }}>
+                    ← Выбрать из абонементов
+                  </button>
+                )}
+                <button type="button" onClick={onClose}
+                  style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                           cursor: "pointer", textDecoration: "underline" }}>
+                  Отмена
+                </button>
+              </form>
+            )}
+          </div>
         )}
 
         {stage === "creating" && (
