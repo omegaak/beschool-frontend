@@ -182,6 +182,7 @@ function PaymentModal({ userId, studentName, onClose }) {
   // ручной ввод остаётся только запасным вариантом
   const [subsLoading, setSubsLoading] = useState(true);
   const [subs, setSubs] = useState([]);
+  const [subsError, setSubsError] = useState(""); // отличаем «ошибка запроса» от «абонементов правда нет»
   const [manualMode, setManualMode] = useState(false);
 
   useEffect(() => {
@@ -190,12 +191,20 @@ function PaymentModal({ userId, studentName, onClose }) {
       .then(r => r.json())
       .then(json => {
         if (cancelled) return;
-        setSubs(json.ok && Array.isArray(json.data) ? json.data : []);
+        if (json.ok) {
+          setSubs(Array.isArray(json.data) ? json.data : []);
+        } else {
+          setSubs([]);
+          setSubsError(json.error || "Не удалось получить абонементы из МойКласс");
+        }
       })
-      .catch(() => { if (!cancelled) setSubs([]); })
+      .catch(() => { if (!cancelled) { setSubs([]); setSubsError("Сервер недоступен"); } })
       .finally(() => { if (!cancelled) setSubsLoading(false); });
     return () => { cancelled = true; };
   }, [userId]);
+
+  const payableSubs = subs.filter(s => s.due > 0);
+  const paidUpSubs = subs.filter(s => !(s.due > 0));
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
@@ -299,7 +308,7 @@ function PaymentModal({ userId, studentName, onClose }) {
 
             {!subsLoading && !manualMode && subs.length > 0 && (
               <>
-                {subs.map(s => (
+                {payableSubs.map(s => (
                   <div key={s.userSubscriptionId}
                     style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 14,
                              marginBottom: 10, textAlign: "left" }}>
@@ -326,6 +335,22 @@ function PaymentModal({ userId, studentName, onClose }) {
                     </button>
                   </div>
                 ))}
+                {paidUpSubs.map(s => (
+                  <div key={s.userSubscriptionId}
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: 14,
+                             marginBottom: 10, textAlign: "left", opacity: 0.7 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ background: C.sky, color: C.navy, fontSize: 10, fontWeight: 600,
+                                     padding: "2px 8px", borderRadius: 10 }}>
+                        {s.level || "Абонемент"}
+                      </span>
+                      <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>✓ Оплачено полностью</span>
+                    </div>
+                  </div>
+                ))}
+                {payableSubs.length === 0 && (
+                  <Notice icon="✅" text="По найденным абонементам долгов нет — доплатить можно вручную ниже" />
+                )}
                 {error && (
                   <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
                                 padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>{error}</div>
@@ -346,7 +371,10 @@ function PaymentModal({ userId, studentName, onClose }) {
 
             {!subsLoading && (manualMode || subs.length === 0) && (
               <form onSubmit={handleManualSubmit}>
-                {subs.length === 0 && (
+                {subs.length === 0 && subsError && (
+                  <Notice icon="⚠️" text={`Не удалось проверить абонемент (${subsError}) — введите сумму вручную`} />
+                )}
+                {subs.length === 0 && !subsError && (
                   <Notice icon="ℹ️" text="Активный абонемент не найден в МойКласс — введите сумму вручную" />
                 )}
                 <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
