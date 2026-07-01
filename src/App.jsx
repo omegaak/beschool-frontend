@@ -218,14 +218,15 @@ function PaymentModal({ userId, studentName, onClose }) {
         }),
       });
       const json = await res.json();
-      if (!res.ok || !json.id) {
+      const created = json.data;
+      if (!res.ok || !json.ok || !created?.id) {
         setError(json.error || "Не удалось создать платёж");
         setStage("form");
         return;
       }
-      setPayment(json);
+      setPayment(created);
       setStage("qr");
-      startPolling(json.id);
+      startPolling(created.id);
     } catch {
       setError("Сервер недоступен");
       setStage("form");
