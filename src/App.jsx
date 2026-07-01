@@ -1266,6 +1266,41 @@ function AdminPanelInner({ onBack, adminToken }) {
     onBack();
   }
 
+  // Справочники МойКласс — чтобы найти id типа оплаты и кассы под приложение
+  // без curl/Postman: тот же пароль администратора, что и выше.
+  const [paymentTypes, setPaymentTypes] = useState(null);
+  const [cashboxes, setCashboxes] = useState(null);
+  const [refsLoading, setRefsLoading] = useState({ types: false, cashboxes: false });
+  const [refsError, setRefsError] = useState({ types: "", cashboxes: "" });
+
+  async function loadPaymentTypes() {
+    setRefsLoading(r => ({ ...r, types: true }));
+    setRefsError(e => ({ ...e, types: "" }));
+    try {
+      const res = await fetch(`${API_URL}/admin/moyklass/payment-types`, { headers: authHeaders });
+      const json = await res.json();
+      if (json.ok) setPaymentTypes(json.data);
+      else setRefsError(e => ({ ...e, types: json.error || "Ошибка" }));
+    } catch {
+      setRefsError(e => ({ ...e, types: "Сервер недоступен" }));
+    }
+    setRefsLoading(r => ({ ...r, types: false }));
+  }
+
+  async function loadCashboxes() {
+    setRefsLoading(r => ({ ...r, cashboxes: true }));
+    setRefsError(e => ({ ...e, cashboxes: "" }));
+    try {
+      const res = await fetch(`${API_URL}/admin/moyklass/cashboxes`, { headers: authHeaders });
+      const json = await res.json();
+      if (json.ok) setCashboxes(json.data);
+      else setRefsError(e => ({ ...e, cashboxes: json.error || "Ошибка" }));
+    } catch {
+      setRefsError(e => ({ ...e, cashboxes: "Сервер недоступен" }));
+    }
+    setRefsLoading(r => ({ ...r, cashboxes: false }));
+  }
+
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
                   minHeight: "100vh", padding: 16, maxWidth: 520, margin: "0 auto" }}>
@@ -1327,6 +1362,69 @@ function AdminPanelInner({ onBack, adminToken }) {
             {saving ? "Сохраняем..." : "Добавить"}
           </button>
         </form>
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+          🔎 Справочники МойКласс
+        </div>
+        <div style={{ fontSize: 11, color: C.gray, marginBottom: 12 }}>
+          Найди id типа оплаты и кассы для приложения — они нужны в переменных
+          MOYKLASS_PAYMENT_TYPE_ID / MOYKLASS_CASHBOX_ID на Railway.
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+          <button type="button" onClick={loadPaymentTypes} disabled={refsLoading.types}
+            style={{ background: C.sky, color: C.navy, border: "none", borderRadius: 8,
+                     padding: "8px 0", fontSize: 12, fontWeight: 600,
+                     cursor: refsLoading.types ? "default" : "pointer" }}>
+            {refsLoading.types ? "Загрузка..." : "Показать типы оплат"}
+          </button>
+          <button type="button" onClick={loadCashboxes} disabled={refsLoading.cashboxes}
+            style={{ background: C.sky, color: C.navy, border: "none", borderRadius: 8,
+                     padding: "8px 0", fontSize: 12, fontWeight: 600,
+                     cursor: refsLoading.cashboxes ? "default" : "pointer" }}>
+            {refsLoading.cashboxes ? "Загрузка..." : "Показать кассы"}
+          </button>
+        </div>
+
+        {refsError.types && (
+          <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                        padding: "8px 12px", fontSize: 12, marginBottom: 10 }}>{refsError.types}</div>
+        )}
+        {paymentTypes && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.gray, textTransform: "uppercase",
+                          marginBottom: 6 }}>Типы оплат</div>
+            {paymentTypes.length === 0 && <div style={{ fontSize: 12, color: C.gray }}>Пусто</div>}
+            {paymentTypes.map(t => (
+              <div key={t.id} style={{ display: "flex", justifyContent: "space-between",
+                                       fontSize: 13, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span>{t.name}</span>
+                <span style={{ fontFamily: "monospace", color: C.navy, fontWeight: 600 }}>id: {t.id}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {refsError.cashboxes && (
+          <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                        padding: "8px 12px", fontSize: 12, marginBottom: 10 }}>{refsError.cashboxes}</div>
+        )}
+        {cashboxes && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: C.gray, textTransform: "uppercase",
+                          marginBottom: 6 }}>Кассы</div>
+            {cashboxes.length === 0 && <div style={{ fontSize: 12, color: C.gray }}>Пусто</div>}
+            {cashboxes.map(c => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between",
+                                       fontSize: 13, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                <span>{c.name}{c.paymentTypeId != null ? ` (тип ${c.paymentTypeId})` : ""}</span>
+                <span style={{ fontFamily: "monospace", color: C.navy, fontWeight: 600 }}>id: {c.id}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase",
