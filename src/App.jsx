@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://beschool-production.up.railway.app";
+// Реальный домен фронтенда — window.location.origin сам подстроится под prod/preview деплой,
+// вместо захардкоженного плейсхолдера "be.school", который никогда не существовал.
+const FRONTEND_URL = import.meta.env.VITE_FRONTEND_URL || (typeof window !== "undefined" ? window.location.origin : "");
 
 // ─── Real BE School data from МойКласс API analysis ─────────────────────────
 const COURSES = {
@@ -707,7 +710,7 @@ function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
               `Уровень: ${d.level} (${d.levelProgress}%)\n` +
               `Посещаемость: ${d.attendance}%\n` +
               (d.avgMark ? `Средний балл: ${d.avgMark}/100\n` : "") +
-              `\nПолный отчёт → be.school/p/${d.userId}`;
+              `\nПолный отчёт → ${FRONTEND_URL}/p/${d.userId}`;
             if (navigator.share) navigator.share({ text: msg });
             else navigator.clipboard?.writeText(msg).then(() => alert("Скопировано!"));
           }}
@@ -881,7 +884,7 @@ function Dashboard({ classInfo, onBackToClasses, onView }) {
               </button>
               <button
                 onClick={() => {
-                  const link = `be.school/p/${s.id}`;
+                  const link = `${FRONTEND_URL}/p/${s.id}`;
                   navigator.clipboard?.writeText(link);
                   alert(`Ссылка скопирована:\n${link}`);
                 }}
@@ -1010,8 +1013,12 @@ function LoginScreen({ onLogin, onBackToRole }) {
 }
 
 // ─── PARENT LOGIN SCREEN (ID ученика из МойКласс + пароль, по умолчанию 12345678) ─
-function ParentLoginScreen({ onLogin, onBackToRole }) {
-  const [userId, setUserId] = useState("");
+function ParentLoginScreen({ onLogin, onBackToRole, presetUserId }) {
+  const [userId, setUserId] = useState(presetUserId ? String(presetUserId) : "");
+  // Если пришли по персональной ссылке /p/:id — ID уже известен, заблокирован,
+  // остаётся ввести только пароль (см. запрос заказчика: "ссылка будет
+  // содержать только его ID"). Можно снять блокировку ссылкой "Это не я".
+  const [idLocked, setIdLocked] = useState(!!presetUserId);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1068,11 +1075,20 @@ function ParentLoginScreen({ onLogin, onBackToRole }) {
               inputMode="numeric"
               value={userId}
               onChange={e => setUserId(e.target.value)}
+              readOnly={idLocked}
               placeholder="Например, 9602487"
               style={{ width: "100%", padding: "11px 13px", border: `1px solid ${C.border}`,
-                       borderRadius: 10, fontSize: 14, color: C.navy, background: "#fff",
+                       borderRadius: 10, fontSize: 14, color: C.navy,
+                       background: idLocked ? C.bg : "#fff",
                        outline: "none", boxSizing: "border-box" }}
             />
+            {idLocked && (
+              <button type="button" onClick={() => setIdLocked(false)}
+                style={{ background: "none", border: "none", color: C.gray, fontSize: 11,
+                         marginTop: 4, cursor: "pointer", textDecoration: "underline", padding: 0 }}>
+                Это не я — ввести другой ID
+              </button>
+            )}
           </div>
           <div style={{ marginBottom: 18 }}>
             <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
@@ -1769,8 +1785,19 @@ function AdminPanelInner({ onBack, adminToken }) {
 }
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
+// Персональная ссылка вида /p/12345 — открывается по клику из мессенджера.
+// Читаем ID один раз при загрузке страницы (SPA-роутинга у нас нет и не
+// нужно — маршрут ровно один). vercel.json отдаёт index.html на любой путь,
+// иначе Vercel вернёт 404 ещё до того, как загрузится React.
+function parseLinkedStudentId() {
+  if (typeof window === "undefined") return null;
+  const m = window.location.pathname.match(/^\/p\/(\d+)/);
+  return m ? m[1] : null;
+}
+
 export default function App() {
-  const [screen, setScreen]   = useState("role"); // role | login | parent-login | change-password | classes | dashboard | portfolio
+  const linkedStudentId = parseLinkedStudentId();
+  const [screen, setScreen]   = useState(linkedStudentId ? "parent-login" : "role"); // role | login | parent-login | change-password | classes | dashboard | portfolio
   const [selected, setSelected] = useState(null);
   const [session, setSession] = useState(null); // { token, teacher }
   const [parentSession, setParentSession] = useState(null); // { token, userId }
@@ -1788,6 +1815,14 @@ export default function App() {
       .then(json => {
         if (json.ok) {
           setSession({ token, teacher: json.teacher });
+          // Открыт по персональной ссылке /p/:id — учитель видит любого
+          // своего ученика, сразу показываем портфолио (checkStudentAccess
+          // на бэкенде всё равно проверит, что это его ученик).
+          if (linkedStudentId) {
+            setSelected({ id: Number(linkedStudentId) });
+            setViewerMode("teacher");
+            setScreen("portfolio");
+          }
         } else {
           // Сессия недействительна — очищаем
           localStorage.removeItem("be_session_token");
@@ -1812,7 +1847,16 @@ export default function App() {
       .then(json => {
         if (json.ok) {
           setParentSession({ token, userId: json.userId });
-          if (json.mustChangePassword) setScreen("change-password");
+          if (json.mustChangePassword) {
+            setScreen("change-password");
+          } else if (linkedStudentId && String(json.userId) === String(linkedStudentId)) {
+            // Открыт по ссылке своего же ребёнка — сессия уже есть, сразу портфолио
+            setSelected({ id: json.userId });
+            setViewerMode("parent");
+            setScreen("portfolio");
+          }
+          // Иначе (ссылка другого ребёнка) — остаёмся на экране входа с
+          // ID из ссылки, залогиниваться нужно отдельно под него
         } else {
           localStorage.removeItem("be_parent_token");
           localStorage.removeItem("be_parent_userId");
@@ -1948,7 +1992,8 @@ export default function App() {
 
   // ── parent/student login ──
   if (screen === "parent-login") return (
-    <ParentLoginScreen onLogin={handleParentLogin} onBackToRole={() => setScreen("role")} />
+    <ParentLoginScreen onLogin={handleParentLogin} onBackToRole={() => setScreen("role")}
+                       presetUserId={linkedStudentId} />
   );
 
   // ── mandatory password change (first login with default password) ──
