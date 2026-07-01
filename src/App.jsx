@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "https://beschool-production.up.railway.app";
 
@@ -170,6 +170,205 @@ const Notice = ({ icon, text }) => (
   </div>
 );
 
+// ─── PAYMENT MODAL (MKassa QR: кнопка → QR → поллинг статуса) ───────────────
+function PaymentModal({ userId, studentName, onClose }) {
+  const [amount, setAmount] = useState("");
+  const [stage, setStage] = useState("form"); // form | creating | qr | success | error
+  const [payment, setPayment] = useState(null); // { id, paymentToken, amountSom, status }
+  const [error, setError] = useState("");
+  const pollRef = useRef(null);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  function startPolling(id) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/mkassa/status/${id}`);
+        const json = await res.json();
+        const status = json.status || json.data?.status;
+        if (status === "paid") {
+          clearInterval(pollRef.current);
+          setStage("success");
+        } else if (status === "canceled" || status === "failed" || status === "expired") {
+          clearInterval(pollRef.current);
+          setError(`Платёж не завершён (${status})`);
+          setStage("error");
+        }
+      } catch {
+        // Сеть моргнула — не рвём поллинг, попробуем на следующем тике
+      }
+    }, 3000);
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setError("");
+    const sum = Number(amount);
+    if (!sum || sum <= 0) { setError("Введите сумму в сомах"); return; }
+    setStage("creating");
+    try {
+      const res = await fetch(`${API_URL}/mkassa/create-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          amountSom: sum,
+          comment: `Оплата — ${studentName || userId}`,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.id) {
+        setError(json.error || "Не удалось создать платёж");
+        setStage("form");
+        return;
+      }
+      setPayment(json);
+      setStage("qr");
+      startPolling(json.id);
+    } catch {
+      setError("Сервер недоступен");
+      setStage("form");
+    }
+  }
+
+  function handleCancel() {
+    if (payment?.id) {
+      fetch(`${API_URL}/mkassa/cancel/${payment.id}`, { method: "POST" }).catch(() => {});
+    }
+    if (pollRef.current) clearInterval(pollRef.current);
+    onClose();
+  }
+
+  const qrImg = payment?.paymentToken
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(payment.paymentToken)}`
+    : null;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(23,56,22,.55)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  padding: 20, zIndex: 1000 }}>
+      <style>{`@keyframes bePulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }`}</style>
+      <div style={{ background: "#fff", borderRadius: 18, padding: 24, maxWidth: 340,
+                    width: "100%", fontFamily: "system-ui,sans-serif", textAlign: "center" }}>
+
+        {stage === "form" && (
+          <form onSubmit={handleCreate}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+              Оплата обучения
+            </div>
+            <div style={{ fontSize: 12, color: C.gray, marginBottom: 18 }}>
+              {studentName || `Ученик #${userId}`}
+            </div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: C.gray,
+                            marginBottom: 6, textTransform: "uppercase", letterSpacing: ".04em",
+                            textAlign: "left" }}>
+              Сумма, сом
+            </label>
+            <input
+              type="number" inputMode="decimal" min="1" value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder="1000" autoFocus
+              style={{ width: "100%", padding: "12px 14px", border: `1px solid ${C.border}`,
+                       borderRadius: 10, fontSize: 16, color: C.navy, background: "#fff",
+                       outline: "none", boxSizing: "border-box", marginBottom: 14, textAlign: "center" }}
+            />
+            {error && (
+              <div style={{ background: C.redLt, color: C.red, borderRadius: 8,
+                            padding: "8px 12px", fontSize: 12, marginBottom: 14 }}>{error}</div>
+            )}
+            <button type="submit"
+              style={{ width: "100%", background: C.gold, color: C.navy, border: "none",
+                       borderRadius: 12, padding: 14, fontSize: 14, fontWeight: 700,
+                       cursor: "pointer", marginBottom: 10 }}>
+              Получить QR для оплаты
+            </button>
+            <button type="button" onClick={onClose}
+              style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                       cursor: "pointer", textDecoration: "underline" }}>
+              Отмена
+            </button>
+          </form>
+        )}
+
+        {stage === "creating" && (
+          <div style={{ padding: "30px 0" }}>
+            <div style={{ fontSize: 13, color: C.gray }}>Создаём платёж...</div>
+          </div>
+        )}
+
+        {stage === "qr" && payment && (
+          <>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+              Отсканируйте QR
+            </div>
+            <div style={{ fontSize: 12, color: C.gray, marginBottom: 16 }}>
+              MBank / Элсом / О!Деньги · {payment.amountSom} сом
+            </div>
+            {qrImg && (
+              <img src={qrImg} alt="QR для оплаты" width={220} height={220}
+                   style={{ borderRadius: 12, border: `1px solid ${C.border}`, marginBottom: 16 }} />
+            )}
+            <div style={{ fontSize: 11, color: C.gray, marginBottom: 16, display: "flex",
+                          alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.gold,
+                             display: "inline-block", animation: "bePulse 1.4s infinite" }} />
+              Ожидаем оплату...
+            </div>
+            <a href={payment.paymentToken} target="_blank" rel="noreferrer"
+               style={{ display: "block", fontSize: 12, color: C.green, marginBottom: 14 }}>
+              Открыть в приложении банка →
+            </a>
+            <button type="button" onClick={handleCancel}
+              style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                       cursor: "pointer", textDecoration: "underline" }}>
+              Отменить оплату
+            </button>
+          </>
+        )}
+
+        {stage === "success" && (
+          <div style={{ padding: "10px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.navy, marginBottom: 6 }}>
+              Оплата прошла успешно
+            </div>
+            <div style={{ fontSize: 12, color: C.gray, marginBottom: 20 }}>
+              {payment?.amountSom} сом зачислено
+            </div>
+            <button type="button" onClick={onClose}
+              style={{ width: "100%", background: C.navy, color: "#fff", border: "none",
+                       borderRadius: 12, padding: 13, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              Готово
+            </button>
+          </div>
+        )}
+
+        {stage === "error" && (
+          <div style={{ padding: "10px 0" }}>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>⚠️</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: C.red, marginBottom: 6 }}>
+              {error}
+            </div>
+            <button type="button"
+              onClick={() => { setStage("form"); setPayment(null); setError(""); }}
+              style={{ width: "100%", background: C.navy, color: "#fff", border: "none",
+                       borderRadius: 12, padding: 13, fontSize: 14, fontWeight: 600, cursor: "pointer",
+                       marginBottom: 8 }}>
+              Попробовать снова
+            </button>
+            <button type="button" onClick={onClose}
+              style={{ background: "none", border: "none", color: C.gray, fontSize: 12,
+                       cursor: "pointer", textDecoration: "underline" }}>
+              Закрыть
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── PORTFOLIO LOADER (fetches real data from backend) ───────────────────────
 function PortfolioLoader({ userId, studentName, onBack }) {
   const [data, setData] = useState(null);
@@ -239,6 +438,7 @@ function PortfolioLoader({ userId, studentName, onBack }) {
 // ─── PORTFOLIO VIEW ───────────────────────────────────────────────────────────
 function Portfolio({ data, studentName, onBack }) {
   const d = data || DEMO;
+  const [showPayment, setShowPayment] = useState(false);
 
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
@@ -357,6 +557,15 @@ function Portfolio({ data, studentName, onBack }) {
           ))}
         </div>
 
+        {/* Pay */}
+        <button
+          onClick={() => setShowPayment(true)}
+          style={{ width: "100%", background: C.navy, color: "#fff", border: "none",
+                   borderRadius: 12, padding: 15, fontSize: 14, fontWeight: 700,
+                   cursor: "pointer", marginBottom: 8 }}>
+          💳 Оплатить обучение
+        </button>
+
         {/* Share */}
         <button
           onClick={() => {
@@ -379,6 +588,14 @@ function Portfolio({ data, studentName, onBack }) {
           <br />Обновлено: {new Date(d.lastSync).toLocaleString("ru-RU")}
         </div>
       </div>
+
+      {showPayment && (
+        <PaymentModal
+          userId={d.userId}
+          studentName={studentName || d.name}
+          onClose={() => setShowPayment(false)}
+        />
+      )}
     </div>
   );
 }
