@@ -13,9 +13,10 @@ const COURSES = {
 };
 const LEVEL_ORDER = ["ABC","Beginner","Elementary","Pre-Int","Intermediate","Upper-Int","IELTS"];
 
+// Цвета навыков — фирменная палитра BE School (брендбук), не произвольные
 const SKILL_COLORS = {
-  Grammar:"#4F86C6", Reading:"#2D7D46", Speaking:"#C9A84C",
-  Vocabulary:"#8B5CF6", Writing:"#E56B6F", Listening:"#0891B2",
+  Grammar:"#9D59A2", Reading:"#33BEF3", Speaking:"#F7528E",
+  Vocabulary:"#4DB20D", Writing:"#D4A62A", Listening:"#33BEF3",
 };
 const SKILL_ICONS = {
   Grammar:"📝", Reading:"📖", Speaking:"🎤",
@@ -46,6 +47,15 @@ const DEMO = {
   hasSkills: true,
   hasTopics: true,
   lastSync: "2026-06-29T09:31:46Z",
+  gamification: {
+    xp: 460,
+    streakLessons: 6,
+    badges: [
+      { id: "streak",  label: "Уроков подряд", icon: "flame",    value: 6,  earned: true },
+      { id: "perfect", label: "Без пропусков", icon: "checkbox", value: null, earned: false },
+      { id: "top",     label: "Топ результат", icon: "star",     value: 92, earned: true },
+    ],
+  },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -53,6 +63,10 @@ const C = {
   navy:"#173816", gold:"#4DB20D", goldLt:"#EAF7E1", green:"#2E7D32",
   greenLt:"#E6F4E8", red:"#C0392B", redLt:"#FDE8E8", gray:"#6B7280",
   border:"#E1E8DD", bg:"#F6FAF4", white:"#FFFFFF", sky:"#E3F3DB",
+  // Фирменные цвета BE School (из брендбука) — используются в портфолио ученика
+  brandBlue:"#33BEF3", brandPurple:"#9D59A2", brandPink:"#F7528E",
+  brandYellow:"#FFE465", brandGreen:"#4DB20D", brandAmber:"#D4A62A",
+  brandGradient:"linear-gradient(135deg, #33BEF3 0%, #9D59A2 100%)",
 };
 
 // Логотип BE School — на тёмном фоне показываем версию с белой подложкой,
@@ -131,7 +145,7 @@ function LevelBar({ level, pct }) {
                                   borderRadius: 5, height: 10, overflow: "hidden" }}>
             <div style={{
               height: "100%", borderRadius: 5,
-              background: "linear-gradient(90deg,#C9A84C,#E8C96A)",
+              background: "linear-gradient(90deg,#4DB20D,#FFE465)",
               width: `${segmentFill(seg)}%`,
               transition: "width 1.4s cubic-bezier(.4,0,.2,1)",
             }} />
@@ -567,33 +581,42 @@ function PortfolioLoader({ userId, studentName, onBack, authHeader = {}, onLogou
 }
 
 // ─── PORTFOLIO VIEW ───────────────────────────────────────────────────────────
+// Оформление значков-достижений — привязано к id значка из backend (server.js)
+const BADGE_STYLE = {
+  streak:  { bg: "#F7528E", fg: "#fff",    icon: "🔥" },
+  perfect: { bg: "#4DB20D", fg: "#fff",    icon: "✅" },
+  top:     { bg: "#FFE465", fg: "#6b5300", icon: "🌟" },
+};
+
 function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
   const d = data || DEMO;
   const [showPayment, setShowPayment] = useState(false);
+  const gam = d.gamification || { xp: 0, streakLessons: 0, badges: [] };
 
   return (
     <div style={{ fontFamily: "system-ui,sans-serif", background: C.bg,
                   minHeight: "100vh", maxWidth: 480, margin: "0 auto" }}>
 
       {/* Header */}
-      <div style={{ background: C.navy, padding: "20px 20px 0", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: C.brandGradient, padding: "20px 20px 0",
+                    position: "relative", overflow: "hidden", borderRadius: "0 0 22px 22px" }}>
         <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180,
-                      borderRadius: "50%", background: "rgba(201,168,76,.1)" }} />
+                      borderRadius: "50%", background: "rgba(255,255,255,.08)" }} />
 
         {onBack && (
           <button onClick={onBack}
-            style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
+            style={{ background: "rgba(255,255,255,.18)", border: "none", color: "#fff",
                      fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20,
                      cursor: "pointer", marginBottom: 14 }}>← Все ученики</button>
         )}
         {onLogout && (
           <button onClick={onLogout}
-            style={{ background: "rgba(255,255,255,.12)", border: "none", color: "#fff",
+            style={{ background: "rgba(255,255,255,.18)", border: "none", color: "#fff",
                      fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20,
                      cursor: "pointer", marginBottom: 14, float: "right" }}>Выйти</button>
         )}
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
           <div>
             <div style={{ marginBottom: 6 }}>
               <Logo height={18} onDark />
@@ -601,27 +624,60 @@ function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
             <div style={{ fontSize: 22, fontWeight: 700, color: "#fff", marginBottom: 3 }}>
               {studentName || d.name || `Ученик #${d.userId}`}
             </div>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,.5)" }}>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,.75)" }}>
               Портфолио ученика
             </div>
           </div>
-          <div style={{ background: C.gold, color: C.navy, fontSize: 11, fontWeight: 700,
-                        padding: "5px 12px", borderRadius: 20, letterSpacing: ".05em" }}>
+          <div style={{ background: C.brandYellow, color: "#6b5300", fontSize: 12, fontWeight: 700,
+                        width: 46, height: 46, borderRadius: "50%", display: "flex",
+                        alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        border: "2px solid #fff", transform: "rotate(-8deg)" }}>
             {d.level?.toUpperCase()}
           </div>
         </div>
+
+        {gam.streakLessons > 0 && (
+          <div style={{ background: "#fff", borderRadius: "14px 14px 14px 4px",
+                        padding: "7px 13px", display: "inline-block", marginBottom: 14 }}>
+            <span style={{ fontSize: 12, color: C.navy }}>
+              {gam.streakLessons >= 5
+                ? `Отличная серия — ${gam.streakLessons} уроков подряд!`
+                : "Продолжаем в том же духе!"}
+            </span>
+          </div>
+        )}
 
         <LevelBar level={d.level} pct={d.levelProgress} />
       </div>
 
       <div style={{ padding: 16 }}>
 
+        {/* Streak + XP */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <div style={{ background: C.brandPink, borderRadius: 14, padding: "10px 12px",
+                        display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 20 }}>🔥</span>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{gam.streakLessons}</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.9)" }}>уроков подряд</div>
+            </div>
+          </div>
+          <div style={{ background: `linear-gradient(135deg, ${C.brandPurple}, ${C.brandBlue})`,
+                        borderRadius: 14, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 20 }}>⭐</span>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{gam.xp}</div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,.9)" }}>очков опыта</div>
+            </div>
+          </div>
+        </div>
+
         {/* Stats */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 20 }}>
           {[
             ["📅", `${d.attendance}%`, "Посещаемость"],
             ["📝", `${d.visitedLessons}/${d.totalLessons}`, "Уроков"],
-            ["⭐", d.avgMark ? `${d.avgMark}` : "—", "Ср. балл"],
+            ["🎯", d.avgMark ? `${d.avgMark}` : "—", "Ср. балл"],
           ].map(([ic, v, lb]) => (
             <div key={lb} style={{ background: C.white, border: `1px solid ${C.border}`,
                                    borderRadius: 12, padding: "12px 8px", textAlign: "center" }}>
@@ -631,6 +687,36 @@ function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
             </div>
           ))}
         </div>
+
+        {/* Значки-достижения */}
+        {gam.badges.length > 0 && (
+          <>
+            <SecTitle>Значки</SecTitle>
+            <div style={{ display: "flex", gap: 12, marginBottom: 20, overflowX: "auto", paddingBottom: 4 }}>
+              {gam.badges.map((b, i) => {
+                const st = BADGE_STYLE[b.id] || { bg: C.border, fg: C.gray, icon: "🏅" };
+                return (
+                  <div key={b.id} style={{ textAlign: "center", flexShrink: 0, width: 68 }}>
+                    <div style={{
+                      width: 52, height: 52, borderRadius: "50%",
+                      background: b.earned ? st.bg : C.border,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 22, margin: "0 auto", border: "2px solid #fff",
+                      boxShadow: `0 0 0 1px ${C.border}`,
+                      transform: `rotate(${i % 2 === 0 ? -6 : 5}deg)`,
+                      opacity: b.earned ? 1 : .5,
+                    }}>
+                      {b.earned ? st.icon : "🔒"}
+                    </div>
+                    <div style={{ fontSize: 9, color: C.gray, marginTop: 6, lineHeight: 1.3 }}>
+                      {b.value != null ? `${b.value} · ` : ""}{b.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {/* Skills */}
         <SecTitle>Навыки</SecTitle>
@@ -697,7 +783,7 @@ function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
         {/* Pay */}
         <button
           onClick={() => setShowPayment(true)}
-          style={{ width: "100%", background: C.navy, color: "#fff", border: "none",
+          style={{ width: "100%", background: C.brandGradient, color: "#fff", border: "none",
                    borderRadius: 12, padding: 15, fontSize: 14, fontWeight: 700,
                    cursor: "pointer", marginBottom: 8 }}>
           💳 Оплатить обучение
@@ -714,7 +800,7 @@ function Portfolio({ data, studentName, onBack, authHeader = {}, onLogout }) {
             if (navigator.share) navigator.share({ text: msg });
             else navigator.clipboard?.writeText(msg).then(() => alert("Скопировано!"));
           }}
-          style={{ width: "100%", background: C.gold, color: C.navy, border: "none",
+          style={{ width: "100%", background: C.brandYellow, color: "#6b5300", border: "none",
                    borderRadius: 12, padding: 15, fontSize: 14, fontWeight: 700,
                    cursor: "pointer", marginBottom: 8 }}>
           📤 Поделиться с родителем
