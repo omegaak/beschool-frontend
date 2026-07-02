@@ -1544,6 +1544,50 @@ function AdminPanelInner({ onBack, adminToken }) {
   const [resetSaving, setResetSaving] = useState(false);
   const [resetMsg, setResetMsg] = useState("");
 
+  // Платежи MKassa — на случай если коллбэк от банка не пришёл, а деньги
+  // уже списаны: список последних транзакций + кнопка "Сверить" на каждой
+  // (дёргает /mkassa/recheck/:id, который перепроверяет статус у MKassa
+  // напрямую и, если реально оплачено, зачисляет платёж в МойКласс).
+  const [mkassaTx, setMkassaTx] = useState([]);
+  const [mkassaLoading, setMkassaLoading] = useState(true);
+  const [recheckingId, setRecheckingId] = useState(null);
+  const [recheckMsg, setRecheckMsg] = useState("");
+
+  function loadMkassaTx() {
+    setMkassaLoading(true);
+    fetch(`${API_URL}/admin/mkassa/transactions`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(json => { if (json.ok) setMkassaTx(json.data); })
+      .catch(() => {})
+      .finally(() => setMkassaLoading(false));
+  }
+
+  useEffect(() => { loadMkassaTx(); }, []);
+
+  async function handleRecheck(id) {
+    setRecheckingId(id);
+    setRecheckMsg("");
+    try {
+      const res = await fetch(`${API_URL}/mkassa/recheck/${encodeURIComponent(id)}`, {
+        method: "POST", headers: authHeaders,
+      });
+      const json = await res.json();
+      if (json.ok) {
+        const status = json.data?.status;
+        setRecheckMsg(
+          status === "paid" ? `✅ ${id}: оплата найдена и зачислена в МойКласс`
+          : `ℹ️ ${id}: статус в MKassa — ${status}`
+        );
+        loadMkassaTx();
+      } else {
+        setRecheckMsg(json.error || "Ошибка сверки");
+      }
+    } catch {
+      setRecheckMsg("Сервер недоступен");
+    }
+    setRecheckingId(null);
+  }
+
   function loadAll() {
     setLoading(true);
     Promise.all([
@@ -1842,6 +1886,55 @@ function AdminPanelInner({ onBack, adminToken }) {
             </button>
           </div>
         ))}
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.navy, marginBottom: 4 }}>
+          💳 Платежи MKassa
+        </div>
+        <div style={{ fontSize: 11, color: C.gray, marginBottom: 12, lineHeight: 1.5 }}>
+          Зачисление в МойКласс происходит по коллбэку от банка. Если оплата
+          прошла в банке, а тут всё ещё «pending» — коллбэк не дошёл. Жми
+          «Сверить»: приложение само перепроверит статус у MKassa и, если
+          деньги реально получены, зачислит платёж.
+        </div>
+
+        {recheckMsg && (
+          <div style={{ fontSize: 12, color: recheckMsg.startsWith("✅") ? C.green : C.navy, marginBottom: 10 }}>
+            {recheckMsg}
+          </div>
+        )}
+
+        {mkassaLoading && <div style={{ color: C.gray, fontSize: 13 }}>Загрузка...</div>}
+        {!mkassaLoading && mkassaTx.length === 0 && (
+          <div style={{ fontSize: 12, color: C.gray }}>Транзакций пока нет</div>
+        )}
+        {mkassaTx.map(tx => {
+          const statusLabel = {
+            paid: "✅ Оплачено", pending: "⏳ Ожидание", canceled: "Отменено",
+            amount_mismatch: "⚠️ Несовпадение суммы",
+          }[tx.status] || tx.status;
+          const statusColor = tx.status === "paid" ? C.green : tx.status === "pending" ? C.gray : C.red;
+          return (
+            <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                                       fontSize: 12, padding: "8px 0", borderBottom: `1px solid ${C.border}`, gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: "monospace", color: C.navy }}>{tx.id}</div>
+                <div style={{ color: C.gray, fontSize: 11 }}>
+                  ID {tx.userId} · {tx.amountSom} сом · <span style={{ color: statusColor }}>{statusLabel}</span>
+                </div>
+              </div>
+              {tx.status !== "paid" && (
+                <button onClick={() => handleRecheck(tx.id)} disabled={recheckingId === tx.id}
+                  style={{ background: C.sky, color: C.navy, border: "none", borderRadius: 8,
+                           padding: "5px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap",
+                           cursor: recheckingId === tx.id ? "default" : "pointer", flexShrink: 0 }}>
+                  {recheckingId === tx.id ? "..." : "Сверить"}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 700, color: C.navy, textTransform: "uppercase",
